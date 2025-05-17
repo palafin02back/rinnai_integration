@@ -159,16 +159,3 @@ class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
             # Update local state immediately
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()
-
-            # Actively request a refresh
-            await self._request_refresh()
-
-    async def _request_refresh(self) -> None:
-        """Actively request a state refresh."""
-        _LOGGER.debug("Actively requesting water heater state refresh")
-        # First trigger background state update
-        if await self.coordinator.client.fetch_device_state(self._device_id):
-            # Use public method to process state data
-            self.coordinator.process_device_states()
-            # Force component state update
-            await self.coordinator.async_request_refresh()

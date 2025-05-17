@@ -235,9 +235,6 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()
 
-            # Actively request a refresh
-            await self._request_refresh()
-
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
         if hvac_mode == HVACMode.HEAT:
@@ -264,14 +261,25 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                     _LOGGER.debug("Immediately updating state to normal heating mode")
                     # Immediately update UI
                     self.async_write_ha_state()
-
-                    # Actively request a data refresh to ensure state update
-                    await self._request_refresh()
+                else:
+                    _LOGGER.warning("Failed to turn on heating")
+            else:
+                # 如果采暖已经开启，但hvac_mode设为HEAT，可能是UI刷新，无需发送命令
+                _LOGGER.debug(
+                    "Heating already on, no command needed for HVAC mode HEAT"
+                )
 
         elif hvac_mode == HVACMode.OFF:
+            # 如果已经是关闭状态，无需发送关闭命令
+            if self._current_mode == "standby":
+                _LOGGER.debug("Heating already off, no command needed")
+                return
+
             # Switch to standby mode - "Heating Off"
             standby_config = HEATING_MODES["standby"]
             command = {standby_config["command"]: standby_config["value"]}
+
+            _LOGGER.debug("Sending command to turn off heating: %s", command)
             success = await self.coordinator.async_send_command(
                 self._device_id, command
             )
@@ -283,11 +291,10 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 self._attr_hvac_action = HVACAction.OFF
                 self._attr_preset_mode = None
 
-                _LOGGER.debug("Immediately updating state to heating off")
+                _LOGGER.debug("Successfully turned off heating")
                 self.async_write_ha_state()
-
-                # Actively request a data refresh to ensure state update
-                await self._request_refresh()
+            else:
+                _LOGGER.warning("Failed to turn off heating")
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
@@ -324,15 +331,21 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             requires_normal,
         )
 
-        command_sent = False
-
-        # Check if we need to switch to normal mode first
+        # 检查是否需要先切换到普通模式
         if (
             requires_normal
             and current_mode_key != "normal"
             and target_mode_key != "normal"
+            and (
+                current_mode_key == "normal"
+                and target_mode_key in ["energy_saving", "outdoor"]
+            )
         ):
+            # 只有在以下情况才需要先切换到normal模式：
+            # 1. 当前是standby（采暖关闭）状态，需要先开启采暖
+            # 2. 目标是节能模式或户外模式，且当前不是normal模式
             _LOGGER.debug("First switching to normal mode before target mode")
+
             # Switch to normal mode first
             normal_config = HEATING_MODES["normal"]
             normal_command = {normal_config["command"]: normal_config["value"]}
@@ -346,11 +359,21 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 # Immediately update to normal mode
                 self._current_mode = "normal"
                 self._attr_preset_mode = HEATING_MODES["normal"]["display"]
+                self._attr_hvac_mode = HVACMode.HEAT  # 确保HVAC模式为HEAT
                 self.async_write_ha_state()
-                command_sent = True
 
                 # Wait a short time to ensure device state updates
                 await asyncio.sleep(2)
+            else:
+                _LOGGER.warning(
+                    "Failed to switch to normal mode before %s", preset_mode
+                )
+                return  # 如果切换到normal模式失败，就不继续后面的操作
+
+        # 如果当前已经是目标模式，无需发送命令
+        if current_mode_key == target_mode_key:
+            _LOGGER.debug("Already in %s mode, no need to send command", preset_mode)
+            return
 
         # Send target mode command
         command = {target_command: target_value}
@@ -373,20 +396,5 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 elif target_mode_key == "outdoor":
                     self._attr_target_temperature = self.min_temp
 
-            _LOGGER.debug("Immediately updating state to: %s", preset_mode)
+            _LOGGER.debug("Successfully switched to %s mode", preset_mode)
             self.async_write_ha_state()
-            command_sent = True
-
-        # If command was successfully sent, actively trigger a refresh
-        if command_sent:
-            await self._request_refresh()
-
-    async def _request_refresh(self) -> None:
-        """Actively request a state refresh."""
-        _LOGGER.debug("Actively requesting device state refresh")
-        # First trigger background state update
-        if await self.coordinator.client.fetch_device_state(self._device_id):
-            # Use public method to process state data
-            self.coordinator.process_device_states()
-            # Force component state update
-            await self.coordinator.async_request_refresh()
