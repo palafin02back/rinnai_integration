@@ -1,0 +1,111 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "password": "Password",
+                    "username": "Username"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "burning_state": {
+                "name": "Burning State"
+            },
+            "gas_usage": {
+                "name": "Gas Usage"
+            },
+            "heating_temperature_hes": {
+                "name": "Heating Temperature (Energy Saving)"
+            },
+            "heating_temperature_nm": {
+                "name": "Heating Temperature (Normal Mode)"
+            },
+            "hot_water_temperature": {
+                "name": "Hot Water Temperature"
+            },
+            "operation_mode": {
+                "name": "Operation Mode"
+            },
+            "supply_time": {
+                "name": "Supply Time"
+            },
+            "total_power_supply_time": {
+                "name": "Total Power Supply Time"
+            },
+            "total_heating_burning_time": {
+                "name": "Total Heating Burning Time"
+            },
+            "total_hot_water_burning_time": {
+                "name": "Total Hot Water Burning Time"
+            },
+            "heating_burning_times": {
+                "name": "Heating Burning Times"
+            },
+            "hot_water_burning_times": {
+                "name": "Hot Water Burning Times"
+            }
+        },
+        "climate": {
+            "rinnai": {
+                "name": "Heating Control",
+                "state_attributes": {
+                    "preset_mode": {
+                        "state": {
+                            "Normal Heating": "Normal Heating",
+                            "Heating Energy Saving": "Heating Energy Saving",
+                            "Heating Outdoor": "Heating Outdoor",
+                            "Fast Heating": "Fast Heating"
+                        }
+                    }
+                }
+            }
+        },
+        "switch": {
+            "energy_saving_mode": {
+                "name": "Energy Saving Mode"
+            },
+            "outdoor_mode": {
+                "name": "Outdoor Mode"
+            },
+            "rapid_heating": {
+                "name": "Rapid Heating"
+            },
+            "summer_winter": {
+                "name": "Summer/Winter Mode"
+            }
+        },
+        "water_heater": {
+            "rinnai": {
+                "name": "Water Heater",
+                "state_attributes": {
+                    "operation_mode": {
+                        "state": {
+                            "Hot Water": "Hot Water"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "connect_timeout": "Connection Timeout (seconds)",
+                    "update_interval": "Update Interval (seconds)"
+                }
+            }
+        }
+    }
+}

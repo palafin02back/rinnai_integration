@@ -1,0 +1,120 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "设备已经配置"
+        },
+        "error": {
+            "cannot_connect": "连接失败",
+            "invalid_auth": "身份验证无效",
+            "unknown": "意外错误"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "password": "密码",
+                    "username": "用户名"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "burning_state": {
+                "name": "燃烧状态",
+                "state": {
+                    "Standby": "待机",
+                    "Heating Water": "热水加热",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "gas_usage": {
+                "name": "燃气用量"
+            },
+            "heating_temperature_hes": {
+                "name": "供暖温度（节能模式）"
+            },
+            "heating_temperature_nm": {
+                "name": "供暖温度（正常模式）"
+            },
+            "hot_water_temperature": {
+                "name": "热水温度"
+            },
+            "operation_mode": {
+                "name": "运行模式"
+            },
+            "supply_time": {
+                "name": "供水时间"
+            },
+            "total_power_supply_time": {
+                "name": "总供电时间"
+            },
+            "total_heating_burning_time": {
+                "name": "总加热燃烧时间"
+            },
+            "total_hot_water_burning_time": {
+                "name": "总热水燃烧时间"
+            },
+            "heating_burning_times": {
+                "name": "加热燃烧次数"
+            },
+            "hot_water_burning_times": {
+                "name": "热水燃烧次数"
+            }
+        },
+        "climate": {
+            "rinnai": {
+                "name": "采暖控制",
+                "state_attributes": {
+                    "preset_mode": {
+                        "state": {
+                            "Normal Heating": "普通采暖",
+                            "Heating Energy Saving": "节能采暖",
+                            "Heating Outdoor": "户外采暖",
+                            "Fast Heating": "速热模式"
+                        }
+                    }
+                }
+            }
+        },
+        "switch": {
+            "energy_saving_mode": {
+                "name": "节能模式"
+            },
+            "outdoor_mode": {
+                "name": "户外模式"
+            },
+            "rapid_heating": {
+                "name": "速热模式"
+            },
+            "summer_winter": {
+                "name": "冬夏季模式"
+            }
+        },
+        "water_heater": {
+            "rinnai": {
+                "name": "热水器",
+                "state": {
+                    "Hot Water": "热水"
+                },
+                "state_attributes": {
+                    "operation_mode": {
+                        "state": {
+                            "Hot Water": "热水"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "connect_timeout": "连接超时（秒）",
+                    "update_interval": "更新间隔（秒）"
+                }
+            }
+        }
+    }
+}

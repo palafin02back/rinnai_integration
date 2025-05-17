@@ -1,0 +1,13 @@
+{
+  "domain": "rinnai",
+  "name": "Rinnai",
+  "codeowners": [
+    "@palafin02back"
+  ],
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/rinnai",
+  "iot_class": "cloud_push",
+  "quality_scale": "bronze",
+  "requirements": ["paho-mqtt>=1.6.1"],
+  "version": "0.0.1"
+}
