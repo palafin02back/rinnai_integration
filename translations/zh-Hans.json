@@ -65,13 +65,24 @@
         "climate": {
             "rinnai": {
                 "name": "采暖控制",
+                "state": {
+                    "heat": "采暖打开",
+                    "off": "采暖关闭"
+                },
                 "state_attributes": {
+                    "hvac_action": {
+                        "state": {
+                            "heating": "采暖开启",
+                            "idle": "采暖关闭",
+                            "off": "采暖关闭"
+                        }
+                    },
                     "preset_mode": {
                         "state": {
-                            "Normal Heating": "普通采暖",
-                            "Heating Energy Saving": "节能采暖",
-                            "Heating Outdoor": "户外采暖",
-                            "Fast Heating": "速热模式"
+                            "Normal Heating": "普通模式",
+                            "Heating Energy Saving": "节能模式",
+                            "Heating Outdoor": "户外模式",
+                            "Fast Heating": "快速采暖"
                         }
                     }
                 }
