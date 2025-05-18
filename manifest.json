@@ -5,9 +5,10 @@
     "@palafin02back"
   ],
   "config_flow": true,
-  "documentation": "https://www.home-assistant.io/integrations/rinnai",
+  "documentation": "https://github.com/palafin02back/rinnai_integration",
+  "issue_tracker": "https://github.com/palafin02back/rinnai_integration/issues",
   "iot_class": "cloud_push",
   "quality_scale": "bronze",
   "requirements": ["paho-mqtt>=1.6.1"],
-  "version": "0.0.1"
+  "version": "0.1.0"
 }
