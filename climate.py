@@ -189,7 +189,8 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 self.max_temp,
             )
             return
-
+        # froce update data
+        await self.coordinator.async_request_refresh()
         # Get latest mode information again to ensure state is up-to-date
         # This helps resolve issues where mode has changed but UI hasn't updated
         state = self._device_state
@@ -319,10 +320,11 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
         target_command = target_config["command"]
         target_value = target_config["value"]
         requires_normal = target_config["requires_normal"]
-
+        # froce update data
+        await self.coordinator.async_request_refresh()
         # Get current mode
         current_mode_code = self._device_state.raw_data.get("operationMode", "0")
-        current_mode_key = CODE_TO_MODE.get(current_mode_code, "standby")
+        current_mode_key = CODE_TO_MODE.get(current_mode_code)
 
         _LOGGER.debug(
             "Switching mode: current=%s, target=%s, requires_normal=%s",
@@ -336,16 +338,8 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             requires_normal
             and current_mode_key != "normal"
             and target_mode_key != "normal"
-            and (
-                current_mode_key == "normal"
-                and target_mode_key in ["energy_saving", "outdoor"]
-            )
+            and self._attr_hvac_mode == HVACMode.OFF
         ):
-            # 只有在以下情况才需要先切换到normal模式：
-            # 1. 当前是standby（采暖关闭）状态，需要先开启采暖
-            # 2. 目标是节能模式或户外模式，且当前不是normal模式
-            _LOGGER.debug("First switching to normal mode before target mode")
-
             # Switch to normal mode first
             normal_config = HEATING_MODES["normal"]
             normal_command = {normal_config["command"]: normal_config["value"]}
@@ -374,9 +368,19 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
         if current_mode_key == target_mode_key:
             _LOGGER.debug("Already in %s mode, no need to send command", preset_mode)
             return
+        # change to normal mode
+        if target_mode_key == "normal" and current_mode_key != "standby":
+            # 特殊处理从其他模式切换回普通模式的逻辑
+            current_mode_config = HEATING_MODES[current_mode_key]
+            _LOGGER.debug(
+                "Special handling for switching back to normal mode from %s",
+                current_mode_key,
+            )
+            command = {current_mode_config["command"]: current_mode_config["value"]}
+        else:
+            # Send target mode command
+            command = {target_command: target_value}
 
-        # Send target mode command
-        command = {target_command: target_value}
         _LOGGER.debug("Sending command: %s", command)
         success = await self.coordinator.async_send_command(self._device_id, command)
 

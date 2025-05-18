@@ -424,6 +424,8 @@ class RinnaiCoordinator(DataUpdateCoordinator):
     def process_device_states(self) -> None:
         """Process device states from client (public method)."""
         self._process_device_states()
+        # update data to coordinator
+        self.async_set_updated_data(self.data)
 
     async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
         """Send command to a device."""
@@ -440,6 +442,9 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             old_operation_mode = old_state.operation_mode if old_state else "Unknown"
 
             self._devices[device_id].state.update_from_api_data(command)
+
+            # update data to coordinator
+            self.async_set_updated_data(self.data)
 
             # 更新协调器的数据结构，确保引用正确
             self.data["device_states"][device_id] = self._devices[device_id].state

@@ -256,5 +256,5 @@ class RinnaiSensor(CoordinatorEntity, SensorEntity):
             self._attr_available = False
             return
 
-        state = self._device_state
+        state = self.coordinator.get_device_state(self._device_id)
         self._attr_native_value = self.entity_description.value_fn(device, state)
