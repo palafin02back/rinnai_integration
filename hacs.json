@@ -4,5 +4,6 @@
     "render_readme": true,
     "domain": "rinnai",
     "homeassistant": "2023.10.0",
-    "iot_class": "cloud_polling"
+    "iot_class": "cloud_polling",
+    "hacs":"0.0.1"
   }
