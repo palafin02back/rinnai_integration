@@ -319,86 +319,138 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
         target_config = HEATING_MODES[target_mode_key]
         target_command = target_config["command"]
         target_value = target_config["value"]
-        requires_normal = target_config["requires_normal"]
-        # froce update data
+
+        # Force update data
         await self.coordinator.async_request_refresh()
+
         # Get current mode
         current_mode_code = self._device_state.raw_data.get("operationMode", "0")
-        current_mode_key = CODE_TO_MODE.get(current_mode_code)
+        current_mode_key = CODE_TO_MODE.get(current_mode_code, "standby")
 
         _LOGGER.debug(
-            "Switching mode: current=%s, target=%s, requires_normal=%s",
+            "Switching mode: current=%s, target=%s",
             current_mode_key,
             target_mode_key,
-            requires_normal,
         )
-
-        # 检查是否需要先切换到普通模式
-        if (
-            requires_normal
-            and current_mode_key != "normal"
-            and target_mode_key != "normal"
-            and self._attr_hvac_mode == HVACMode.OFF
-        ):
-            # Switch to normal mode first
-            normal_config = HEATING_MODES["normal"]
-            normal_command = {normal_config["command"]: normal_config["value"]}
-
-            # Send command to switch to normal mode
-            success = await self.coordinator.async_send_command(
-                self._device_id, normal_command
-            )
-
-            if success:
-                # Immediately update to normal mode
-                self._current_mode = "normal"
-                self._attr_preset_mode = HEATING_MODES["normal"]["display"]
-                self._attr_hvac_mode = HVACMode.HEAT  # 确保HVAC模式为HEAT
-                self.async_write_ha_state()
-
-                # Wait a short time to ensure device state updates
-                await asyncio.sleep(2)
-            else:
-                _LOGGER.warning(
-                    "Failed to switch to normal mode before %s", preset_mode
-                )
-                return  # 如果切换到normal模式失败，就不继续后面的操作
 
         # 如果当前已经是目标模式，无需发送命令
         if current_mode_key == target_mode_key:
             _LOGGER.debug("Already in %s mode, no need to send command", preset_mode)
             return
-        # change to normal mode
-        if target_mode_key == "normal" and current_mode_key != "standby":
-            # 特殊处理从其他模式切换回普通模式的逻辑
-            current_mode_config = HEATING_MODES[current_mode_key]
+
+        # 根据不同情况处理模式切换
+        commands_to_send = []
+        # 场景1: 从standby状态切换到非normal模式
+        if current_mode_key == "standby" and target_mode_key != "normal":
             _LOGGER.debug(
-                "Special handling for switching back to normal mode from %s",
+                "Switching from OFF to %s mode requires two steps", target_mode_key
+            )
+            # 第一步：先开启普通模式
+            normal_config = HEATING_MODES["normal"]
+            commands_to_send.append(
+                {
+                    "command": {normal_config["command"]: normal_config["value"]},
+                    "wait_time": 2,
+                    "description": "Turn on normal heating",
+                }
+            )
+            # 第二步：切换到目标模式
+            commands_to_send.append(
+                {
+                    "command": {target_command: target_value},
+                    "wait_time": 0,
+                    "description": f"Switch to {target_mode_key} mode",
+                }
+            )
+        # 场景2: 从特殊模式切换回普通模式 - 只需关闭特殊模式
+        elif (
+            current_mode_key not in ["normal", "standby"]
+            and target_mode_key == "normal"
+        ):
+            _LOGGER.debug(
+                "Switching back to normal mode - just need to close %s mode",
                 current_mode_key,
             )
-            command = {current_mode_config["command"]: current_mode_config["value"]}
+            # 只需关闭当前模式，系统会自动回到普通模式
+            current_mode_config = HEATING_MODES[current_mode_key]
+            commands_to_send.append(
+                {
+                    "command": {
+                        current_mode_config["command"]: current_mode_config["value"]
+                    },
+                    "wait_time": 2,
+                    "description": f"Close {current_mode_key} mode to return to normal",
+                }
+            )
+        # 场景2: 从非normal/standby模式切换到其他模式
+        elif (
+            current_mode_key not in ["normal", "standby"]
+            and target_mode_key != "standby"
+        ):
+            _LOGGER.debug("Switching between special modes requires two steps")
+            # 第一步：关闭当前模式
+            current_mode_config = HEATING_MODES[current_mode_key]
+            commands_to_send.append(
+                {
+                    "command": {
+                        current_mode_config["command"]: current_mode_config["value"]
+                    },
+                    "wait_time": 2,
+                    "description": f"Close current {current_mode_key} mode",
+                }
+            )
+            # 第二步：设置目标模式
+            commands_to_send.append(
+                {
+                    "command": {target_command: target_value},
+                    "wait_time": 0,
+                    "description": f"Set target {target_mode_key} mode",
+                }
+            )
+        # 场景3: 直接切换（如standby->normal, normal->其他模式）
         else:
-            # Send target mode command
-            command = {target_command: target_value}
+            commands_to_send.append(
+                {
+                    "command": {target_command: target_value},
+                    "wait_time": 0,
+                    "description": f"Direct switch to {target_mode_key} mode",
+                }
+            )
 
-        _LOGGER.debug("Sending command: %s", command)
-        success = await self.coordinator.async_send_command(self._device_id, command)
+        # 执行命令序列
+        for idx, cmd_info in enumerate(commands_to_send):
+            _LOGGER.debug(
+                "Step %d: %s - %s",
+                idx + 1,
+                cmd_info["description"],
+                cmd_info["command"],
+            )
+            success = await self.coordinator.async_send_command(
+                self._device_id, cmd_info["command"]
+            )
+            if not success:
+                _LOGGER.warning(
+                    "Failed at step %d: %s", idx + 1, cmd_info["description"]
+                )
+                return
+            # 等待状态更新
+            if cmd_info["wait_time"] > 0:
+                await asyncio.sleep(cmd_info["wait_time"])
+                await self.coordinator.async_request_refresh()
+        # 更新完成后更新实体状态
+        self._current_mode = target_mode_key
+        self._attr_preset_mode = preset_mode
+        self._attr_hvac_mode = HVACMode.HEAT  # Ensure HVAC mode is heat
 
-        if success:
-            # Immediately update preset mode state
-            self._current_mode = target_mode_key
-            self._attr_preset_mode = preset_mode
-            self._attr_hvac_mode = HVACMode.HEAT  # Ensure HVAC mode is heat
+        # Update target temperature (based on mode)
+        state = self._device_state
+        if state:
+            if target_mode_key == "normal":
+                self._attr_target_temperature = state.heating_temp_nm
+            elif target_mode_key == "energy_saving":
+                self._attr_target_temperature = state.heating_temp_hes
+            elif target_mode_key == "outdoor":
+                self._attr_target_temperature = self.min_temp
 
-            # Update target temperature (based on mode)
-            state = self._device_state
-            if state:
-                if target_mode_key == "normal":
-                    self._attr_target_temperature = state.heating_temp_nm
-                elif target_mode_key == "energy_saving":
-                    self._attr_target_temperature = state.heating_temp_hes
-                elif target_mode_key == "outdoor":
-                    self._attr_target_temperature = self.min_temp
-
-            _LOGGER.debug("Successfully switched to %s mode", preset_mode)
-            self.async_write_ha_state()
+        _LOGGER.debug("Successfully switched to %s mode", preset_mode)
+        self.async_write_ha_state()
