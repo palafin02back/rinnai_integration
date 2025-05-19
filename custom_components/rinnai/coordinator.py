@@ -259,7 +259,7 @@ class RinnaiCoordinator(DataUpdateCoordinator):
 
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
-        self._load_energy_data()
+        hass.create_task(self._load_energy_data())
 
     async def _load_energy_data(self) -> None:
         """Load saved energy data from storage."""
