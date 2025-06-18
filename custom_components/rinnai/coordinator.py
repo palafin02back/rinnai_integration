@@ -185,8 +185,8 @@ class RinnaiDeviceState:
                     gas_int = int(gas_value, 16)
 
                     # Convert to cubic meters (divide by 1000)
-                    gas_consumption = float(gas_int) / 1000.0
-                    self.gas_used = round(gas_consumption, 3)
+                    gas_consumption = float(gas_int) / 10000.0
+                    self.gas_used = round(gas_consumption, 2)
 
                     # Update gasUsed field in api_data
                     api_data["gasUsed"] = self.gas_used
