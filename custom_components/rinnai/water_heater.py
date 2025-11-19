@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MAX_TEMP, MIN_TEMP, TEMP_STEP
+from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .models.device import RinnaiDevice
 
@@ -51,9 +51,11 @@ class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
         # Only supports temperature control
         self._attr_supported_features = WaterHeaterEntityFeature.TARGET_TEMPERATURE
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_min_temp = MIN_TEMP
-        self._attr_max_temp = MAX_TEMP
-        self._attr_target_temperature_step = TEMP_STEP
+        
+        # Set default values, will be updated in _update_attributes
+        self._attr_min_temp = 35
+        self._attr_max_temp = 65
+        self._attr_target_temperature_step = 1
 
         # No longer supports operation mode list, but needs to set default current operation mode
         self._attr_operation_list = []
@@ -131,6 +133,12 @@ class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
             device.online,
             self._attr_target_temperature,
         )
+
+        # Update temperature limits from config if available
+        if device.config and device.config.temperature:
+            self._attr_min_temp = device.config.temperature.min
+            self._attr_max_temp = device.config.temperature.max
+            self._attr_target_temperature_step = device.config.temperature.step
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""

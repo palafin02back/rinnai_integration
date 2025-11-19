@@ -17,7 +17,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .client import RinnaiClient
+from .core.client import RinnaiClient
 from .const import (
     CONF_CONNECT_TIMEOUT,
     CONF_UPDATE_INTERVAL,

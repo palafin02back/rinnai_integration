@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .core.client import RinnaiClient
-from .const import CODE_TO_MODE, DOMAIN
+from .const import DOMAIN
 from .models.device import RinnaiDevice, RinnaiDeviceState
 
 _LOGGER = logging.getLogger(__name__)
@@ -286,7 +286,9 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Basic Status:")
             _LOGGER.info(
                 "  Operation Mode: %s (Code: %s)",
-                CODE_TO_MODE.get(state.operation_mode, "Unknown"),
+                device.config.code_to_mode.get(state.operation_mode, "Unknown")
+                if device.config
+                else "Unknown",
                 state.operation_mode,
             )
             _LOGGER.info(
