@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CODE_TO_MODE, DOMAIN, HEATING_MODES, MAX_TEMP, MIN_TEMP, TEMP_STEP
+from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,10 +32,13 @@ async def async_setup_entry(
     """Set up Rinnai climate based on a config entry."""
     coordinator: RinnaiCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities = [
-        RinnaiHeatingClimateEntity(coordinator, device_id)
-        for device_id in coordinator.data["devices"]
-    ]
+    entities = []
+    for device_id in coordinator.data["devices"]:
+        device = coordinator.get_device(device_id)
+        if device and device.config and device.config.heating_modes:
+            entities.append(RinnaiHeatingClimateEntity(coordinator, device_id))
+        else:
+            _LOGGER.debug("Device %s does not support heating, skipping climate entity", device_id)
 
     async_add_entities(entities)
 
@@ -55,22 +58,32 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
         )
 
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_min_temp = MIN_TEMP
-        self._attr_max_temp = MAX_TEMP
-        self._attr_target_temperature_step = TEMP_STEP
+        
+        # Initialize attributes from device config
+        device = self._device
+        if device and device.config:
+            self._attr_min_temp = device.config.temperature.min
+            self._attr_max_temp = device.config.temperature.max
+            self._attr_target_temperature_step = device.config.temperature.step
+            
+            self._attr_preset_modes = [
+                config.display
+                for mode_key, config in device.config.heating_modes.items()
+                if mode_key != device.config.off_mode_key  # Exclude Off mode
+            ]
+        else:
+            # Fallback defaults if device not ready (shouldn't happen usually)
+            self._attr_min_temp = 35
+            self._attr_max_temp = 65
+            self._attr_target_temperature_step = 1
+            self._attr_preset_modes = []
 
         self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-
-        self._attr_preset_modes = [
-            config["display"]
-            for mode_key, config in HEATING_MODES.items()
-            if mode_key != "standby"  # Exclude "Heating Off"
-        ]
 
         # Use has_entity_name flag to enable proper translation
         self._attr_has_entity_name = True
 
-        self._current_mode = "standby"
+        self._current_mode = device.config.off_mode_key if device and device.config else "standby"
 
         self._update_attributes()
 
@@ -111,22 +124,26 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
 
         # Update state attributes
         state = self._device_state
-        if not state:
+        if not state or not device.config:
             return
 
         # Get current operation mode
         mode_code = state.raw_data.get("operationMode")
-        if mode_code and mode_code in CODE_TO_MODE:
-            self._current_mode = CODE_TO_MODE[mode_code]
+        code_to_mode = device.config.code_to_mode
+        
+        off_mode = device.config.off_mode_key
+        
+        if mode_code and mode_code in code_to_mode:
+            self._current_mode = code_to_mode[mode_code]
 
             # Set preset mode
-            if self._current_mode != "standby":
-                self._attr_preset_mode = HEATING_MODES[self._current_mode]["display"]
+            if self._current_mode != off_mode:
+                self._attr_preset_mode = device.config.heating_modes[self._current_mode].display
             else:
                 self._attr_preset_mode = None
 
             # Set HVAC mode
-            if self._current_mode == "standby":
+            if self._current_mode == off_mode:
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
             else:
@@ -137,33 +154,34 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 # Add debug log
                 _LOGGER.debug("Current burning state: %s", burning_state)
                 # Correctly compare burning state
-                if burning_state in ["31", "32"]:
+                if burning_state in device.config.active_heating_states:
                     self._attr_hvac_action = HVACAction.HEATING
                     _LOGGER.debug("Setting hvac_action to HEATING")
                 else:
                     self._attr_hvac_action = HVACAction.IDLE
                     _LOGGER.debug("Setting hvac_action to IDLE")
         else:
-            self._current_mode = "standby"
+            self._current_mode = off_mode
             self._attr_preset_mode = None
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
 
         # Get appropriate temperature based on current mode
-        if self._current_mode == "normal":
-            # Normal mode - use normal heating temperature
-            self._attr_target_temperature = state.heating_temp_nm
-        elif self._current_mode == "energy_saving":
-            # Energy saving mode - use energy saving heating temperature
-            self._attr_target_temperature = state.heating_temp_hes
-        elif self._current_mode == "outdoor":
-            # Outdoor mode - display minimum temperature, representing "LO"
-            self._attr_target_temperature = self.min_temp
-            # Set an additional flag indicating outdoor mode
-            self._attr_extra_state_attributes = {"outdoor_mode": True}
+        mode_config = device.config.heating_modes.get(self._current_mode)
+        if mode_config and mode_config.temperature_attribute:
+            attr_name = mode_config.temperature_attribute
+            if attr_name == "min":
+                self._attr_target_temperature = self.min_temp
+                # Set an additional flag indicating outdoor mode or similar
+                self._attr_extra_state_attributes = {"special_mode": True}
+            elif hasattr(state, attr_name):
+                self._attr_target_temperature = getattr(state, attr_name)
+            else:
+                # Fallback
+                self._attr_target_temperature = state.heating_temp_nm
         else:
-            # Default to normal temperature for other modes
-            self._attr_target_temperature = state.heating_temp_nm
+             # Default to normal temperature if no config
+             self._attr_target_temperature = state.heating_temp_nm
 
         # Add debug log
         _LOGGER.debug(
@@ -191,42 +209,42 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             return
         # froce update data
         await self.coordinator.async_request_refresh()
+        
+        device = self._device
+        if not device or not device.config:
+            return
+            
         # Get latest mode information again to ensure state is up-to-date
-        # This helps resolve issues where mode has changed but UI hasn't updated
         state = self._device_state
-        if state and state.raw_data.get("operationMode") in CODE_TO_MODE:
-            self._current_mode = CODE_TO_MODE[state.raw_data.get("operationMode")]
+        code_to_mode = device.config.code_to_mode
+        off_mode = device.config.off_mode_key
+        
+        if state and state.raw_data.get("operationMode") in code_to_mode:
+            self._current_mode = code_to_mode[state.raw_data.get("operationMode")]
             _LOGGER.debug(
                 "Updating mode before setting temperature: %s", self._current_mode
             )
 
-        # Cannot set temperature if in standby mode
-        if self._current_mode == "standby":
+        # Cannot set temperature if in off mode
+        if self._current_mode == off_mode:
             _LOGGER.warning("Cannot set heating temperature when heating is off")
             return
 
-        # Cannot set temperature in outdoor mode
-        if self._current_mode == "outdoor":
-            _LOGGER.warning("Cannot set heating temperature in outdoor mode")
+        # Get mode config
+        mode_config = device.config.heating_modes.get(self._current_mode)
+        if not mode_config:
+            _LOGGER.warning("Unknown mode config for %s", self._current_mode)
             return
+
+        # Check if temperature setting is supported for this mode
+        if not mode_config.temp_set_command:
+             _LOGGER.warning("Cannot set heating temperature in %s mode", self._current_mode)
+             return
 
         # Set appropriate temperature based on current mode
         hex_temperature = hex(temperature)[2:].upper()
-
-        if self._current_mode == "normal":
-            # Normal mode - set normal heating temperature
-            command = {"heatingTempSettingNM": hex_temperature}
-            _LOGGER.debug("Setting normal heating temperature to %s°C", temperature)
-        elif self._current_mode == "energy_saving":
-            # Energy saving mode - set energy saving heating temperature
-            command = {"heatingTempSettingHES": hex_temperature}
-            _LOGGER.debug(
-                "Setting energy saving heating temperature to %s°C", temperature
-            )
-        else:
-            # Default to normal temperature for other modes
-            command = {"heatingTempSettingNM": hex_temperature}
-            _LOGGER.debug("Setting heating temperature to %s°C", temperature)
+        command = {mode_config.temp_set_command: hex_temperature}
+        _LOGGER.debug("Setting %s temperature to %s°C", self._current_mode, temperature)
 
         # Send command
         success = await self.coordinator.async_send_command(self._device_id, command)
@@ -236,73 +254,185 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()
 
+    def _get_transition_steps(
+        self, current_mode_key: str, target_mode_key: str
+    ) -> list[dict[str, Any]]:
+        """Calculate transition steps from current mode to target mode."""
+        device = self._device
+        if not device or not device.config or not device.config.heating_modes:
+            return []
+
+        steps = []
+        target_config = device.config.heating_modes.get(target_mode_key)
+        
+        # If target is invalid or same as current, no steps needed
+        if not target_config or current_mode_key == target_mode_key:
+            return []
+
+        off_mode = device.config.off_mode_key
+        normal_mode = device.config.normal_mode_key
+
+        # Logic for mode switching
+        if current_mode_key == off_mode:
+            if target_mode_key == normal_mode:
+                # Off -> Normal: Just turn on
+                steps.append({
+                    "command": {target_config.command: target_config.value},
+                    "wait_time": 0,
+                    "description": "Turn on normal heating"
+                })
+            elif target_config.requires_normal:
+                # Off -> Special (requires normal): Turn on Normal first, then Special
+                normal_config = device.config.heating_modes.get(normal_mode)
+                if normal_config:
+                    steps.append({
+                        "command": {normal_config.command: normal_config.value},
+                        "wait_time": 2,
+                        "description": "Turn on normal heating first"
+                    })
+                steps.append({
+                    "command": {target_config.command: target_config.value},
+                    "wait_time": 0,
+                    "description": f"Switch to {target_mode_key} mode"
+                })
+            else:
+                # Off -> Special (no normal req): Direct switch
+                steps.append({
+                    "command": {target_config.command: target_config.value},
+                    "wait_time": 0,
+                    "description": f"Switch to {target_mode_key} mode"
+                })
+        
+        elif current_mode_key == normal_mode:
+            # Normal -> Special: Direct switch (usually toggles the special mode on)
+            steps.append({
+                "command": {target_config.command: target_config.value},
+                "wait_time": 0,
+                "description": f"Switch to {target_mode_key} mode"
+            })
+            
+        else:
+            # Current is a special mode (e.g. Energy Saving, Outdoor)
+            
+            # If target is Normal, we just need to toggle OFF the current special mode
+            if target_mode_key == normal_mode:
+                current_config = device.config.heating_modes.get(current_mode_key)
+                if current_config:
+                    steps.append({
+                        "command": {current_config.command: current_config.value},
+                        "wait_time": 2,
+                        "description": f"Close {current_mode_key} mode to return to normal"
+                    })
+            
+            # If target is another Special mode
+            else:
+                # Usually we need to close current special mode first, then open new one
+                current_config = device.config.heating_modes.get(current_mode_key)
+                if current_config:
+                    steps.append({
+                        "command": {current_config.command: current_config.value},
+                        "wait_time": 2,
+                        "description": f"Close current {current_mode_key} mode"
+                    })
+                
+                steps.append({
+                    "command": {target_config.command: target_config.value},
+                    "wait_time": 0,
+                    "description": f"Switch to {target_mode_key} mode"
+                })
+                
+        return steps
+
+    async def _execute_transition(self, steps: list[dict[str, Any]]) -> bool:
+        """Execute a sequence of transition steps."""
+        for idx, step in enumerate(steps):
+            _LOGGER.debug(
+                "Step %d: %s - %s",
+                idx + 1,
+                step["description"],
+                step["command"],
+            )
+            success = await self.coordinator.async_send_command(
+                self._device_id, step["command"]
+            )
+            if not success:
+                _LOGGER.warning(
+                    "Failed at step %d: %s", idx + 1, step["description"]
+                )
+                return False
+            
+            if step["wait_time"] > 0:
+                await asyncio.sleep(step["wait_time"])
+                await self.coordinator.async_request_refresh()
+        return True
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
+        device = self._device
+        if not device or not device.config or not device.config.heating_modes:
+            return
+
+        off_mode = device.config.off_mode_key
+        normal_mode = device.config.normal_mode_key
+
+        target_mode_key = None
         if hvac_mode == HVACMode.HEAT:
-            # If currently in standby mode, switch to normal heating mode
-            if self._current_mode == "standby":
-                # Switch to normal mode
-                normal_config = HEATING_MODES["normal"]
-                command = {normal_config["command"]: normal_config["value"]}
-                success = await self.coordinator.async_send_command(
-                    self._device_id, command
-                )
-
-                if success:
-                    # Immediately update local state without waiting for MQTT callback
-                    self._current_mode = "normal"
-                    self._attr_hvac_mode = HVACMode.HEAT
-                    self._attr_preset_mode = HEATING_MODES["normal"]["display"]
-                    self._attr_hvac_action = HVACAction.IDLE
-                    # Get temperature from current device state
-                    state = self._device_state
-                    if state:
-                        self._attr_target_temperature = state.heating_temp_nm
-
-                    _LOGGER.debug("Immediately updating state to normal heating mode")
-                    # Immediately update UI
-                    self.async_write_ha_state()
-                else:
-                    _LOGGER.warning("Failed to turn on heating")
+            if self._current_mode == off_mode:
+                target_mode_key = normal_mode
             else:
-                # 如果采暖已经开启，但hvac_mode设为HEAT，可能是UI刷新，无需发送命令
-                _LOGGER.debug(
-                    "Heating already on, no command needed for HVAC mode HEAT"
-                )
-
+                _LOGGER.debug("Heating already on")
+                return
         elif hvac_mode == HVACMode.OFF:
-            # 如果已经是关闭状态，无需发送关闭命令
-            if self._current_mode == "standby":
-                _LOGGER.debug("Heating already off, no command needed")
+            if self._current_mode != off_mode:
+                target_mode_key = off_mode
+            else:
+                _LOGGER.debug("Heating already off")
                 return
 
-            # Switch to standby mode - "Heating Off"
-            standby_config = HEATING_MODES["standby"]
-            command = {standby_config["command"]: standby_config["value"]}
+        if not target_mode_key:
+            return
 
-            _LOGGER.debug("Sending command to turn off heating: %s", command)
-            success = await self.coordinator.async_send_command(
-                self._device_id, command
-            )
-
-            if success:
-                # Immediately update local state without waiting for MQTT callback
-                self._current_mode = "standby"
+        # Get transition steps
+        steps = self._get_transition_steps(self._current_mode, target_mode_key)
+        
+        # Execute steps
+        if await self._execute_transition(steps):
+            # Optimistic update
+            self._current_mode = target_mode_key
+            if target_mode_key == off_mode:
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
                 self._attr_preset_mode = None
-
-                _LOGGER.debug("Successfully turned off heating")
-                self.async_write_ha_state()
             else:
-                _LOGGER.warning("Failed to turn off heating")
+                self._attr_hvac_mode = HVACMode.HEAT
+                self._attr_hvac_action = HVACAction.IDLE
+                normal_config = device.config.heating_modes.get(normal_mode)
+                if normal_config:
+                    self._attr_preset_mode = normal_config.display
+                
+                # Update temp
+                state = self._device_state
+                if state:
+                    # Try to get temp for normal mode
+                    normal_mode_config = device.config.heating_modes.get(normal_mode)
+                    if normal_mode_config and normal_mode_config.temperature_attribute:
+                         if hasattr(state, normal_mode_config.temperature_attribute):
+                             self._attr_target_temperature = getattr(state, normal_mode_config.temperature_attribute)
+                    else:
+                        self._attr_target_temperature = state.heating_temp_nm
+            
+            self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
+        device = self._device
+        if not device or not device.config or not device.config.heating_modes:
+            return
+
         # Find mode configuration matching the display name
         target_mode_key = None
-        for mode_key, config in HEATING_MODES.items():
-            if config["display"] == preset_mode:
+        for mode_key, config in device.config.heating_modes.items():
+            if config.display == preset_mode:
                 target_mode_key = mode_key
                 break
 
@@ -310,22 +440,14 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             _LOGGER.warning("Unknown preset mode: %s", preset_mode)
             return
 
-        # If standby mode is selected, handle with set_hvac_mode
-        if target_mode_key == "standby":
-            await self.async_set_hvac_mode(HVACMode.OFF)
-            return
-
-        # Get target mode configuration
-        target_config = HEATING_MODES[target_mode_key]
-        target_command = target_config["command"]
-        target_value = target_config["value"]
-
         # Force update data
         await self.coordinator.async_request_refresh()
 
         # Get current mode
         current_mode_code = self._device_state.raw_data.get("operationMode", "0")
-        current_mode_key = CODE_TO_MODE.get(current_mode_code, "standby")
+        code_to_mode = device.config.code_to_mode
+        off_mode = device.config.off_mode_key
+        current_mode_key = code_to_mode.get(current_mode_code, off_mode)
 
         _LOGGER.debug(
             "Switching mode: current=%s, target=%s",
@@ -333,124 +455,29 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             target_mode_key,
         )
 
-        # 如果当前已经是目标模式，无需发送命令
-        if current_mode_key == target_mode_key:
-            _LOGGER.debug("Already in %s mode, no need to send command", preset_mode)
+        # Get transition steps
+        steps = self._get_transition_steps(current_mode_key, target_mode_key)
+        
+        if not steps:
+            _LOGGER.debug("No transition steps needed")
             return
 
-        # 根据不同情况处理模式切换
-        commands_to_send = []
-        # 场景1: 从standby状态切换到非normal模式
-        if current_mode_key == "standby" and target_mode_key != "normal":
-            _LOGGER.debug(
-                "Switching from OFF to %s mode requires two steps", target_mode_key
-            )
-            # 第一步：先开启普通模式
-            normal_config = HEATING_MODES["normal"]
-            commands_to_send.append(
-                {
-                    "command": {normal_config["command"]: normal_config["value"]},
-                    "wait_time": 2,
-                    "description": "Turn on normal heating",
-                }
-            )
-            # 第二步：切换到目标模式
-            commands_to_send.append(
-                {
-                    "command": {target_command: target_value},
-                    "wait_time": 0,
-                    "description": f"Switch to {target_mode_key} mode",
-                }
-            )
-        # 场景2: 从特殊模式切换回普通模式 - 只需关闭特殊模式
-        elif (
-            current_mode_key not in ["normal", "standby"]
-            and target_mode_key == "normal"
-        ):
-            _LOGGER.debug(
-                "Switching back to normal mode - just need to close %s mode",
-                current_mode_key,
-            )
-            # 只需关闭当前模式，系统会自动回到普通模式
-            current_mode_config = HEATING_MODES[current_mode_key]
-            commands_to_send.append(
-                {
-                    "command": {
-                        current_mode_config["command"]: current_mode_config["value"]
-                    },
-                    "wait_time": 2,
-                    "description": f"Close {current_mode_key} mode to return to normal",
-                }
-            )
-        # 场景2: 从非normal/standby模式切换到其他模式
-        elif (
-            current_mode_key not in ["normal", "standby"]
-            and target_mode_key != "standby"
-        ):
-            _LOGGER.debug("Switching between special modes requires two steps")
-            # 第一步：关闭当前模式
-            current_mode_config = HEATING_MODES[current_mode_key]
-            commands_to_send.append(
-                {
-                    "command": {
-                        current_mode_config["command"]: current_mode_config["value"]
-                    },
-                    "wait_time": 2,
-                    "description": f"Close current {current_mode_key} mode",
-                }
-            )
-            # 第二步：设置目标模式
-            commands_to_send.append(
-                {
-                    "command": {target_command: target_value},
-                    "wait_time": 0,
-                    "description": f"Set target {target_mode_key} mode",
-                }
-            )
-        # 场景3: 直接切换（如standby->normal, normal->其他模式）
-        else:
-            commands_to_send.append(
-                {
-                    "command": {target_command: target_value},
-                    "wait_time": 0,
-                    "description": f"Direct switch to {target_mode_key} mode",
-                }
-            )
+        # Execute steps
+        if await self._execute_transition(steps):
+            # Optimistic state update
+            self._current_mode = target_mode_key
+            self._attr_preset_mode = preset_mode
+            self._attr_hvac_mode = HVACMode.HEAT if target_mode_key != off_mode else HVACMode.OFF
+            
+            # Update target temperature based on new mode
+            state = self._device_state
+            if state:
+                mode_config = device.config.heating_modes.get(target_mode_key)
+                if mode_config and mode_config.temperature_attribute:
+                    if hasattr(state, mode_config.temperature_attribute):
+                        self._attr_target_temperature = getattr(state, mode_config.temperature_attribute)
+                    elif mode_config.temperature_attribute == "min":
+                        self._attr_target_temperature = self.min_temp
 
-        # 执行命令序列
-        for idx, cmd_info in enumerate(commands_to_send):
-            _LOGGER.debug(
-                "Step %d: %s - %s",
-                idx + 1,
-                cmd_info["description"],
-                cmd_info["command"],
-            )
-            success = await self.coordinator.async_send_command(
-                self._device_id, cmd_info["command"]
-            )
-            if not success:
-                _LOGGER.warning(
-                    "Failed at step %d: %s", idx + 1, cmd_info["description"]
-                )
-                return
-            # 等待状态更新
-            if cmd_info["wait_time"] > 0:
-                await asyncio.sleep(cmd_info["wait_time"])
-                await self.coordinator.async_request_refresh()
-        # 更新完成后更新实体状态
-        self._current_mode = target_mode_key
-        self._attr_preset_mode = preset_mode
-        self._attr_hvac_mode = HVACMode.HEAT  # Ensure HVAC mode is heat
-
-        # Update target temperature (based on mode)
-        state = self._device_state
-        if state:
-            if target_mode_key == "normal":
-                self._attr_target_temperature = state.heating_temp_nm
-            elif target_mode_key == "energy_saving":
-                self._attr_target_temperature = state.heating_temp_hes
-            elif target_mode_key == "outdoor":
-                self._attr_target_temperature = self.min_temp
-
-        _LOGGER.debug("Successfully switched to %s mode", preset_mode)
-        self.async_write_ha_state()
+            _LOGGER.debug("Successfully switched to %s mode", preset_mode)
+            self.async_write_ha_state()

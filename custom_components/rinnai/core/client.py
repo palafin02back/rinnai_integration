@@ -15,7 +15,8 @@ import aiohttp
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import AK, INFO_URL, LOGIN_URL, PROCESS_PARAMETER_URL, REFESH_TIME
+from ..const import AK, INFO_URL, LOGIN_URL, PROCESS_PARAMETER_URL, REFESH_TIME
+from .config_manager import config_manager
 from .mqtt_client import RinnaiMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class RinnaiClient:
         # Device data storage
         self.devices: dict[str, dict[str, Any]] = {}
         self.device_states: dict[str, dict[str, Any]] = {}
+        self._device_configs: dict[str, Any] = {}
 
         # Callbacks
         self._state_callbacks: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
@@ -166,6 +168,10 @@ class RinnaiClient:
                     # Initialize state data structure
                     if device_id not in self.device_states:
                         self.device_states[device_id] = {}
+                    
+                    # Load device configuration
+                    device_type = device.get("deviceType", "Unknown")
+                    self._device_configs[device_id] = config_manager.get_config(device_type)
 
                 return True
         except (TimeoutError, aiohttp.ClientError) as err:
@@ -267,7 +273,7 @@ class RinnaiClient:
                             and payload.get("egy")
                             and payload.get("ptn") == "J05"
                         ):
-                            state_data = self._process_energy_data(payload)
+                            state_data = self._process_energy_data(payload, device_id)
                             if state_data:
                                 self._handle_state_update(device_id, state_data)
                     except json.JSONDecodeError:
@@ -298,26 +304,26 @@ class RinnaiClient:
 
         return state_data
 
-    def _process_energy_data(self, parsed_data: dict[str, Any]) -> dict[str, Any]:
+    def _process_energy_data(self, parsed_data: dict[str, Any], device_id: str) -> dict[str, Any]:
         """Extract energy data from MQTT message without formatting."""
         updates = {}
+
+        # Get device config
+        device_config = self._device_configs.get(device_id)
+        if not device_config:
+            _LOGGER.warning("No config found for device %s, using default keys", device_id)
+        else:
+            energy_keys = device_config.features.get("energy_data_keys", [])
+            if not energy_keys:
+                _LOGGER.warning("No energy_data_keys in config for device %s", device_id)
+                return updates
 
         for param in parsed_data.get("egy", []):
             if not isinstance(param, dict):
                 _LOGGER.warning("Skipping invalid parameter: %s", param)
                 continue
-
-            if gas_value := param.get("gasConsumption"):
-                updates["gasConsumption"] = gas_value
-
-            for key in [
-                "totalPowerSupplyTime",
-                "actualUseTime",
-                "totalHeatingBurningTime",
-                "totalHotWaterBurningTime",
-                "heatingBurningTimes",
-                "hotWaterBurningTimes",
-            ]:
+            # Extract all configured energy keys
+            for key in energy_keys:
                 if key in param:
                     updates[key] = param[key]
 

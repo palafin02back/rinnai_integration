@@ -34,9 +34,10 @@ from .const import (
     ATTR_TOTAL_POWER_SUPPLY_TIME,
     CODE_TO_MODE,
     DOMAIN,
-    get_burning_state_ha,
 )
 from .coordinator import RinnaiCoordinator
+from .models.device import RinnaiDevice
+from .util import get_burning_state_ha
 
 _LOGGER = logging.getLogger(__name__)
 
