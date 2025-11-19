@@ -11,7 +11,7 @@ import paho.mqtt.client as mqtt
 
 from homeassistant.core import HomeAssistant, callback
 
-from .const import RINNAI_HOST, RINNAI_PORT
+from ..const import RINNAI_HOST, RINNAI_PORT
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MAX_TEMP, MIN_TEMP, TEMP_STEP
 from .coordinator import RinnaiCoordinator
+from .models.device import RinnaiDevice
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,0 +1,110 @@
+{
+    "name": "Default (G56)",
+    "supported_models": [
+        "G56"
+    ],
+    "defaults": {
+        "off_mode": "standby",
+        "normal_mode": "normal"
+    },
+    "state_parameters": [
+        "operationMode",
+        "roomTempControl",
+        "heatingOutWaterTempControl",
+        "burningState",
+        "hotWaterTempSetting",
+        "heatingTempSettingNM",
+        "heatingTempSettingHES"
+    ],
+    "temperature": {
+        "min": 35,
+        "max": 65,
+        "step": 1
+    },
+    "heating_modes": {
+        "normal": {
+            "display": "Normal Heating",
+            "codes": [
+                "3"
+            ],
+            "command": "summerWinter",
+            "value": "31",
+            "requires_normal": false,
+            "temperature_attribute": "heating_temp_nm",
+            "temp_set_command": "heatingTempSettingNM"
+        },
+        "energy_saving": {
+            "display": "Heating Energy Saving",
+            "codes": [
+                "B",
+                "4B"
+            ],
+            "command": "energySavingMode",
+            "value": "31",
+            "requires_normal": true,
+            "temperature_attribute": "heating_temp_hes",
+            "temp_set_command": "heatingTempSettingHES"
+        },
+        "outdoor": {
+            "display": "Heating Outdoor",
+            "codes": [
+                "13",
+                "53"
+            ],
+            "command": "outdoorMode",
+            "value": "31",
+            "requires_normal": true,
+            "temperature_attribute": "min",
+            "temp_set_command": null
+        },
+        "rapid": {
+            "display": "Fast Heating",
+            "codes": [
+                "43",
+                "4B",
+                "53",
+                "63"
+            ],
+            "command": "rapidHeating",
+            "value": "31",
+            "requires_normal": true,
+            "temperature_attribute": "heating_temp_nm",
+            "temp_set_command": "heatingTempSettingNM"
+        },
+        "standby": {
+            "display": "Heating Off",
+            "codes": [
+                "0",
+                "1",
+                "2"
+            ],
+            "command": "summerWinter",
+            "value": "31",
+            "requires_normal": false,
+            "temperature_attribute": null,
+            "temp_set_command": null
+        }
+    },
+    "burning_states": {
+        "30": "Standby",
+        "31": "Heating Water",
+        "32": "Burning",
+        "33": "Error"
+    },
+    "features": {
+        "gas_consumption_digits": 8,
+        "active_heating_states": [
+            "31",
+            "32"
+        ],
+        "energy_data_keys": [
+            "gasConsumption",
+            "totalPowerSupplyTime",
+            "actualUseTime",
+            "totalHeatingBurningTime",
+            "totalHotWaterBurningTime",
+            "heatingBurningTimes",
+            "hotWaterBurningTimes"
+        ]
+    }
+}

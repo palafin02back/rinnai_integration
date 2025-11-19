@@ -11,9 +11,6 @@ CONF_PASSWORD: Final = "password"
 CONF_UPDATE_INTERVAL: Final = "update_interval"
 CONF_CONNECT_TIMEOUT: Final = "connect_timeout"
 
-# Data processing configuration
-GAS_CONSUMPTION_MAX_DIGITS: Final = 8  # Use last 8 digits of gas consumption hex value
-
 # Attributes and service names
 ATTR_HOT_WATER_TEMP: Final = "hot_water_temperature"
 ATTR_HEATING_TEMP_NM: Final = "heating_temperature_nm"
@@ -50,79 +47,6 @@ DEVICE_TYPE_WATER_HEATER: Final = "water_heater"
 ENTITY_CATEGORY_DIAGNOSTIC: Final = "diagnostic"
 ENTITY_CATEGORY_CONFIG: Final = "config"
 
-# Temperature ranges
-MIN_TEMP: Final = 35
-MAX_TEMP: Final = 65
-TEMP_STEP: Final = 1
-
-# 模式映射定义
-HEATING_MODES: Final = {
-    # Mode name: {display: display name, codes: [mode code list], command: command name, value: command value, requires_normal: whether need to switch to normal mode first}
-    "normal": {
-        "display": "Normal Heating",
-        "codes": ["3"],
-        "command": "summerWinter",
-        "value": "31",
-        "requires_normal": False,
-    },
-    "energy_saving": {
-        "display": "Heating Energy Saving",
-        "codes": ["B", "4B"],
-        "command": "energySavingMode",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "outdoor": {
-        "display": "Heating Outdoor",
-        "codes": ["13", "53"],
-        "command": "outdoorMode",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "rapid": {
-        "display": "Fast Heating",
-        "codes": ["43", "4B", "53", "63"],
-        "command": "rapidHeating",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "standby": {
-        "display": "Heating Off",
-        "codes": ["0", "1", "2"],
-        "command": "summerWinter",
-        "value": "31",
-        "requires_normal": False,
-    },
-    # Temporarily hide scheduled mode
-    # "scheduled": {
-    #     "display": "Heating Scheduled",
-    #     "codes": ["23", "63"],
-    #     "command": "scheduledMode",
-    #     "value": "31",
-    #     "requires_normal": True,
-    # },
-}
-
-# Map mode codes to mode names
-CODE_TO_MODE: Final = {
-    code: mode for mode, config in HEATING_MODES.items() for code in config["codes"]
-}
-
-# Extract various mode code lists for helper functions
-NORMAL_HEATING_CODES: Final = HEATING_MODES["normal"]["codes"]
-ENERGY_SAVING_CODES: Final = HEATING_MODES["energy_saving"]["codes"]
-OUTDOOR_MODES_CODES: Final = HEATING_MODES["outdoor"]["codes"]
-RAPID_HEATING_CODES: Final = HEATING_MODES["rapid"]["codes"]
-HEATING_OFF_MODES_CODES: Final = HEATING_MODES["standby"]["codes"]
-
-# Burning state mapping
-BURNING_STATES: Final = {
-    "30": "Standby",
-    "31": "Heating Water",
-    "32": "Burning",
-    "33": "Error",
-}
-
 HOST: Final = "https://iot.rinnai.com.cn/app"
 LOGIN_URL: Final = f"{HOST}/V1/login"
 INFO_URL: Final = f"{HOST}/V1/device/list"
@@ -131,81 +55,6 @@ PROCESS_PARAMETER_URL: Final = f"{HOST}/V1/device/processParameter"
 # Rinnai Smart Home app built-in accessKey
 AK: Final = "A39C66706B83CCF0C0EE3CB23A39454D"
 REFESH_TIME: Final = 86400  # 24 hours
-# State parameters
-STATE_PARAMETERS: Final = {
-    "operationMode",
-    "roomTempControl",
-    "heatingOutWaterTempControl",
-    "burningState",
-    "hotWaterTempSetting",
-    "heatingTempSettingNM",
-    "heatingTempSettingHES",
-}
 
 
-# Helper methods - for unified state determination
-def is_energy_saving_mode(operation_mode: str) -> bool:
-    """Determine if the mode is energy saving. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
 
-    # If it's text status
-    if "Energy Saving" in operation_mode:
-        return True
-
-    # If it's numeric code, check if it's in energy saving mode codes
-    return operation_mode in ENERGY_SAVING_CODES
-
-
-def is_outdoor_mode(operation_mode: str) -> bool:
-    """Determine if the mode is outdoor mode. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
-
-    # If it's text status
-    if "Outdoor" in operation_mode:
-        return True
-
-    # If it's numeric code
-    return operation_mode in OUTDOOR_MODES_CODES
-
-
-def is_rapid_heating_mode(operation_mode: str) -> bool:
-    """Determine if the mode is rapid heating. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
-
-    # If it's text status
-    if "Fast" in operation_mode:
-        return True
-
-    # If it's numeric code
-    return operation_mode in RAPID_HEATING_CODES
-
-
-def is_heating_off_mode(operation_mode: str) -> bool:
-    """Determine if heating is off. Can handle text status or numeric code."""
-    if not operation_mode:
-        return True
-
-    # If it's text status
-    if any(
-        off_mode in operation_mode
-        for off_mode in ["Power Off", "Heating Off", "Standby"]
-    ):
-        return True
-
-    # If it's numeric code
-    return operation_mode in HEATING_OFF_MODES_CODES
-
-
-def get_burning_state_ha(burning_state: str) -> str:
-    """Get burning state formatted for Home Assistant. Can handle text status or numeric code."""
-    if not burning_state:
-        return "Standby"
-
-    # If it's numeric code
-    if burning_state.isdigit():
-        return BURNING_STATES.get(burning_state)
-
-    return burning_state
