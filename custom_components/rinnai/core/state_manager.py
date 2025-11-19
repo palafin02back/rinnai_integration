@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
+
+_LOGGER = logging.getLogger(__name__)
+
 DEFAULT_DESIRED_STATE_TIMEOUT = 10.0  # Seconds
 
 

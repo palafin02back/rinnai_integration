@@ -21,3 +21,5 @@ coverage.xml
 htmlcov/
 
 .storage/
+config/
+docker-compose.yml

@@ -32,12 +32,10 @@ from .const import (
     ATTR_TOTAL_HEATING_BURNING_TIME,
     ATTR_TOTAL_HOT_WATER_BURNING_TIME,
     ATTR_TOTAL_POWER_SUPPLY_TIME,
-    CODE_TO_MODE,
     DOMAIN,
 )
 from .coordinator import RinnaiCoordinator
 from .models.device import RinnaiDevice
-from .util import get_burning_state_ha
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,9 +80,7 @@ SENSOR_TYPES: Final[tuple[RinnaiSensorEntityDescription, ...]] = (
         translation_key="burning_state",
         name="Burning State",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda _, state: get_burning_state_ha(
-            state.burning_state if state else "Standby"
-        ),
+        value_fn=lambda _, state: state.burning_state_ha if state else "Standby",
     ),
     RinnaiSensorEntityDescription(
         key=ATTR_GAS_USAGE,
@@ -239,7 +235,11 @@ class RinnaiSensor(CoordinatorEntity, SensorEntity):
             return False
 
         mode_code = state.raw_data.get("operationMode")
-        if not mode_code or mode_code not in CODE_TO_MODE:
+        if (
+            not mode_code
+            or not self._device.config
+            or mode_code not in self._device.config.code_to_mode
+        ):
             return False
 
         return True
