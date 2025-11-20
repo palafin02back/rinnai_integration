@@ -60,21 +60,24 @@
             },
             "hot_water_burning_times": {
                 "name": "热水点火次数"
+            },
+            "heating_reservation": {
+                "name": "采暖预约状态"
             }
         },
         "climate": {
             "rinnai": {
                 "name": "采暖控制",
                 "state": {
-                    "heat": "采暖打开",
-                    "off": "采暖关闭"
+                    "heat": "采暖",
+                    "off": "关闭"
                 },
                 "state_attributes": {
                     "hvac_action": {
                         "state": {
-                            "heating": "采暖开启",
-                            "idle": "采暖关闭",
-                            "off": "采暖关闭"
+                            "heating": "燃烧中",
+                            "idle": "待机",
+                            "off": ""
                         }
                     },
                     "preset_mode": {
@@ -100,6 +103,29 @@
             },
             "summer_winter": {
                 "name": "冬夏模式"
+            },
+            "heating_reservation": {
+                "name": "采暖预约开关"
+            }
+        },
+        "text": {
+            "schedule_mode_4": {
+                "name": "自定义1 设置"
+            },
+            "schedule_mode_5": {
+                "name": "自定义2 设置"
+            }
+        },
+        "select": {
+            "reservation_mode": {
+                "name": "预约模式选择",
+                "state": {
+                    "Mode 1": "标准型",
+                    "Mode 2": "上班族",
+                    "Mode 3": "节能型",
+                    "Mode 4": "自定义1",
+                    "Mode 5": "自定义2"
+                }
             }
         },
         "water_heater": {

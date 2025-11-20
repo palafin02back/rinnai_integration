@@ -54,7 +54,7 @@
             "command": "outdoorMode",
             "value": "31",
             "requires_normal": true,
-            "temperature_attribute": "min",
+            "temperature_attribute": "outdoor_min",
             "temp_set_command": null
         },
         "rapid": {
@@ -68,8 +68,8 @@
             "command": "rapidHeating",
             "value": "31",
             "requires_normal": true,
-            "temperature_attribute": "heating_temp_nm",
-            "temp_set_command": "heatingTempSettingNM"
+            "temperature_attribute": "rapid_max",
+            "temp_set_command": null
         },
         "standby": {
             "display": "Heating Off",
@@ -105,6 +105,10 @@
             "totalHotWaterBurningTime",
             "heatingBurningTimes",
             "hotWaterBurningTimes"
-        ]
+        ],
+        "fix_temperature_attribute": {
+            "outdoor_min": 35,
+            "rapid_max": 85
+        }
     }
 }

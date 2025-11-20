@@ -257,6 +257,10 @@ class RinnaiClient:
                         payload = json.loads(msg.payload)
                         _LOGGER.debug("Received MQTT message: %s", payload)
 
+                        # Log any energy data message for debugging
+                        if payload.get("egy"):
+                            _LOGGER.warning("MQTT MESSAGE WITH ENERGY DATA: %s", payload)
+
                         # Process device info message
                         if (
                             topic_type == "inf"
@@ -322,6 +326,10 @@ class RinnaiClient:
             if not isinstance(param, dict):
                 _LOGGER.warning("Skipping invalid parameter: %s", param)
                 continue
+            
+            # Log raw energy data for debugging
+            _LOGGER.warning("RAW ENERGY DATA: %s", param)
+
             # Extract all configured energy keys
             for key in energy_keys:
                 if key in param:

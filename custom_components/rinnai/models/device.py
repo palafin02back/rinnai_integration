@@ -71,10 +71,7 @@ class RinnaiDeviceState:
         "byteStr": ("byte_string", None),
         "lastCheckPoint": ("last_check_point", None),
         # Energy related raw field mapping
-        "gasConsumption": (
-            "gas_used",
-            float,
-        ),  # Hex gas consumption that needs special handling
+
         "actualUseTime": ("supply_time", int),  # Hex supply time
         "totalPowerSupplyTime": (
             "total_power_supply_time",

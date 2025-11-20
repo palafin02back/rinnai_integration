@@ -71,12 +71,6 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                 for mode_key, config in device.config.heating_modes.items()
                 if mode_key != device.config.off_mode_key  # Exclude Off mode
             ]
-        else:
-            # Fallback defaults if device not ready (shouldn't happen usually)
-            self._attr_min_temp = 35
-            self._attr_max_temp = 65
-            self._attr_target_temperature_step = 1
-            self._attr_preset_modes = []
 
         self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
 
@@ -102,6 +96,43 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
         """Handle updated data from the coordinator."""
         self._update_attributes()
         self.async_write_ha_state()
+
+    def _update_temperature_attributes(self) -> None:
+        """Update temperature attributes based on current mode."""
+        device = self._device
+        state = self._device_state
+        
+        if not device or not device.config:
+            return
+
+        # Reset min/max to defaults
+        if device.config.temperature:
+            self._attr_min_temp = device.config.temperature.min
+            self._attr_max_temp = device.config.temperature.max
+        
+        # Get appropriate temperature based on current mode
+        mode_config = device.config.heating_modes.get(self._current_mode)
+        if mode_config:
+            if mode_config.temperature_attribute:
+                attr_name = mode_config.temperature_attribute
+                
+                # Check if this attribute is a fixed value in configuration
+                fix_temp_map = device.config.features.get("fix_temperature_attribute", {})
+                if attr_name in fix_temp_map:
+                    fixed_temp = fix_temp_map[attr_name]
+                    self._attr_target_temperature = fixed_temp
+                    # Lock min/max to fixed value to prevent adjustment
+                    self._attr_min_temp = fixed_temp
+                    self._attr_max_temp = fixed_temp
+                    self._attr_extra_state_attributes = {"special_mode": True}
+                elif hasattr(state, attr_name):
+                    self._attr_target_temperature = getattr(state, attr_name)
+                else:
+                    # Fallback
+                    self._attr_target_temperature = state.heating_temp_nm
+            else:
+                # Fallback if no attribute specified
+                self._attr_target_temperature = state.heating_temp_nm
 
     def _update_attributes(self) -> None:
         """Update entity attributes based on coordinator data."""
@@ -158,30 +189,16 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                     self._attr_hvac_action = HVACAction.HEATING
                     _LOGGER.debug("Setting hvac_action to HEATING")
                 else:
-                    self._attr_hvac_action = HVACAction.IDLE
-                    _LOGGER.debug("Setting hvac_action to IDLE")
+                    self._attr_hvac_action = None
+                    _LOGGER.debug("Setting hvac_action to None (Idle)")
         else:
             self._current_mode = off_mode
             self._attr_preset_mode = None
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
 
-        # Get appropriate temperature based on current mode
-        mode_config = device.config.heating_modes.get(self._current_mode)
-        if mode_config and mode_config.temperature_attribute:
-            attr_name = mode_config.temperature_attribute
-            if attr_name == "min":
-                self._attr_target_temperature = self.min_temp
-                # Set an additional flag indicating outdoor mode or similar
-                self._attr_extra_state_attributes = {"special_mode": True}
-            elif hasattr(state, attr_name):
-                self._attr_target_temperature = getattr(state, attr_name)
-            else:
-                # Fallback
-                self._attr_target_temperature = state.heating_temp_nm
-        else:
-             # Default to normal temperature if no config
-             self._attr_target_temperature = state.heating_temp_nm
+        # Update temperature attributes
+        self._update_temperature_attributes()
 
         # Add debug log
         _LOGGER.debug(
@@ -411,15 +428,7 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
                     self._attr_preset_mode = normal_config.display
                 
                 # Update temp
-                state = self._device_state
-                if state:
-                    # Try to get temp for normal mode
-                    normal_mode_config = device.config.heating_modes.get(normal_mode)
-                    if normal_mode_config and normal_mode_config.temperature_attribute:
-                         if hasattr(state, normal_mode_config.temperature_attribute):
-                             self._attr_target_temperature = getattr(state, normal_mode_config.temperature_attribute)
-                    else:
-                        self._attr_target_temperature = state.heating_temp_nm
+                self._update_temperature_attributes()
             
             self.async_write_ha_state()
 
@@ -470,14 +479,7 @@ class RinnaiHeatingClimateEntity(CoordinatorEntity, ClimateEntity):
             self._attr_hvac_mode = HVACMode.HEAT if target_mode_key != off_mode else HVACMode.OFF
             
             # Update target temperature based on new mode
-            state = self._device_state
-            if state:
-                mode_config = device.config.heating_modes.get(target_mode_key)
-                if mode_config and mode_config.temperature_attribute:
-                    if hasattr(state, mode_config.temperature_attribute):
-                        self._attr_target_temperature = getattr(state, mode_config.temperature_attribute)
-                    elif mode_config.temperature_attribute == "min":
-                        self._attr_target_temperature = self.min_temp
+            self._update_temperature_attributes()
 
             _LOGGER.debug("Successfully switched to %s mode", preset_mode)
             self.async_write_ha_state()

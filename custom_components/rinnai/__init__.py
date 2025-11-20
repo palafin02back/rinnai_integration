@@ -18,8 +18,17 @@ from .const import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
-    PLATFORMS,
 )
+
+PLATFORMS: list[Platform] = [
+    Platform.CLIMATE,
+    Platform.SENSOR,
+    Platform.WATER_HEATER,
+    Platform.SWITCH,
+    Platform.TEXT,
+    Platform.SELECT,
+]
+
 from .coordinator import RinnaiCoordinator
 from .core.config_manager import config_manager
 

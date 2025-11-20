@@ -54,6 +54,9 @@
             },
             "hot_water_burning_times": {
                 "name": "Hot Water Burning Times"
+            },
+            "heating_reservation": {
+                "name": "Heating Reservation Status"
             }
         },
         "climate": {
@@ -83,6 +86,29 @@
             },
             "summer_winter": {
                 "name": "Summer/Winter Mode"
+            },
+            "heating_reservation": {
+                "name": "Heating Reservation Switch"
+            }
+        },
+        "text": {
+            "schedule_mode_4": {
+                "name": "Reservation Mode 4 Setting"
+            },
+            "schedule_mode_5": {
+                "name": "Reservation Mode 5 Setting"
+            }
+        },
+        "select": {
+            "reservation_mode": {
+                "name": "Reservation Mode Selection",
+                "state": {
+                    "Mode 1": "Mode 1",
+                    "Mode 2": "Mode 2",
+                    "Mode 3": "Mode 3",
+                    "Mode 4": "Mode 4",
+                    "Mode 5": "Mode 5"
+                }
             }
         },
         "water_heater": {
