@@ -51,6 +51,8 @@ HOST: Final = "https://iot.rinnai.com.cn/app"
 LOGIN_URL: Final = f"{HOST}/V1/login"
 INFO_URL: Final = f"{HOST}/V1/device/list"
 PROCESS_PARAMETER_URL: Final = f"{HOST}/V1/device/processParameter"
+GET_SCHEDULE_URL: Final = f"{HOST}/V1/device/schedule/getScheduleInfo"
+SAVE_SCHEDULE_URL: Final = f"{HOST}/V1/device/schedule/saveScheduleHour"
 
 # Rinnai Smart Home app built-in accessKey
 AK: Final = "A39C66706B83CCF0C0EE3CB23A39454D"

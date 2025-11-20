@@ -131,6 +131,10 @@ class RinnaiCoordinator(DataUpdateCoordinator):
 
                 # Process initial device data
                 self._process_devices_data()
+                
+                # Fetch initial schedule info for all devices
+                for device_id in self.client.devices:
+                    await self.async_refresh_schedule(device_id)
             else:
                 _LOGGER.debug("Skipping HTTP device fetch, using MQTT data only")
 
@@ -178,6 +182,12 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             # Create device if it doesn't exist
             if device_id not in self._devices:
                 self._devices[device_id] = RinnaiDevice(device_id=device_id)
+                
+                # Register for real-time updates
+                self.client.register_callback(
+                    device_id, 
+                    lambda data, did=device_id: self._handle_device_update(did, data)
+                )
 
             # Update device with API data
             self._devices[device_id].update_from_api_data(device_data)
@@ -215,6 +225,19 @@ class RinnaiCoordinator(DataUpdateCoordinator):
         self._process_device_states()
         # update data to coordinator
         self.async_set_updated_data(self.data)
+
+    def _handle_device_update(self, device_id: str, data: dict[str, Any]) -> None:
+        """Handle real-time update from client."""
+        if device_id in self._devices:
+            _LOGGER.debug("Received real-time update for device %s", device_id)
+            
+            # If we receive an update, the device is definitely online
+            if not self._devices[device_id].online:
+                _LOGGER.info("Device %s is sending updates, marking as online", device_id)
+                self._devices[device_id].online = True
+                
+            self._devices[device_id].update_state(data, is_command=False)
+            self.async_set_updated_data(self.data)
 
     async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
         """Send command to a device."""
@@ -257,6 +280,17 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Command Send Failed: %s", command)
 
         return result
+
+    async def async_refresh_schedule(self, device_id: str) -> None:
+        """Refresh schedule info for a device."""
+        _LOGGER.debug("Refreshing schedule info for device: %s", device_id)
+        schedule_data = await self.client.get_schedule_info(device_id)
+        if schedule_data:
+            # Update device state with schedule data
+            if device_id in self._devices:
+                self._devices[device_id].update_from_api_data(schedule_data)
+                # Notify listeners
+                self.async_set_updated_data(self.data)
 
     def get_device(self, device_id: str) -> RinnaiDevice | None:
         """Get device by ID, with graceful handling of missing devices."""

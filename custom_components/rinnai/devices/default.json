@@ -109,6 +109,13 @@
         "fix_temperature_attribute": {
             "outdoor_min": 35,
             "rapid_max": 85
+        },
+        "heat_type": "G56_HEAT_OVEN",
+        "reservation_mode_presets": {
+            "1": "0101DB446CDB006E4818C680017F80017F",
+            "2": "0102DB446CDB006E4818C680017F80017F",
+            "3": "0103DB446CDB006E4818C680017F80017F"
         }
-    }
+    },
+    "field_mapping": {}
 }

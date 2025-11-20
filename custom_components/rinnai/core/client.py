@@ -66,6 +66,23 @@ class RinnaiClient:
         # Track initialization status
         self._initialized = False
 
+    def register_callback(
+        self, device_id: str, callback_func: Callable[[dict[str, Any]], None]
+    ) -> Callable[[], None]:
+        """Register a callback for device state updates."""
+        if device_id not in self._state_callbacks:
+            self._state_callbacks[device_id] = []
+
+        self._state_callbacks[device_id].append(callback_func)
+
+        def remove_callback() -> None:
+            """Remove the callback."""
+            if device_id in self._state_callbacks:
+                if callback_func in self._state_callbacks[device_id]:
+                    self._state_callbacks[device_id].remove(callback_func)
+
+        return remove_callback
+
     async def async_initialize(self) -> bool:
         """Initialize the client and fetch initial device data."""
         if not await self.login():
@@ -212,6 +229,126 @@ class RinnaiClient:
             _LOGGER.error("Error setting parameter: %s", err)
             return False
 
+    async def get_schedule_info(self, device_id: str) -> dict[str, Any] | None:
+        """Get schedule info for a device via HTTP API."""
+        if not self._token and not await self.login():
+            return None
+
+        device = self.devices.get(device_id)
+        if not device:
+            _LOGGER.error("Device %s not found", device_id)
+            return None
+        
+
+        # Get configured heat_type from features
+        heat_type = None
+        if device_config := self._device_configs.get(device_id):
+            heat_type = device_config.features.get("heat_type")
+        
+        if not heat_type:
+            _LOGGER.error("No heat_type configured for device %s", device_id)
+            return None
+
+        try:
+            async with asyncio.timeout(self.connect_timeout):
+                headers = {"Authorization": f"Bearer {self._token}"}
+                params = {
+                    "mac": device.get("mac"),
+                    "type": heat_type,
+                }
+                
+                # Note: The URL in user request has 'getScheduleinfo' (lowercase i)
+                # but standard might be camelCase. Sticking to user provided URL in const.py
+                from ..const import GET_SCHEDULE_URL
+                
+                _LOGGER.warning("Getting schedule info with params: %s", params)
+                response = await self._session.get(
+                    GET_SCHEDULE_URL,
+                    params=params,
+                    headers=headers,
+                )
+                resp_json = await response.json()
+                _LOGGER.warning("Get schedule response: %s", resp_json)
+
+                if resp_json.get("success") is not True:
+                    _LOGGER.error(
+                        "Failed to get schedule for device %s: %s",
+                        device_id,
+                        resp_json.get("msg", "Unknown error"),
+                    )
+                    return None
+
+                data = resp_json.get("data", {})
+                _LOGGER.debug("Device %s schedule info: %s", device_id, data)
+                return data
+
+        except (TimeoutError, aiohttp.ClientError) as err:
+            _LOGGER.error("Error getting schedule info: %s", err)
+            return None
+
+    async def save_schedule_hour(self, device_id: str, schedule_data: str) -> bool:
+        """Save schedule hour data for a device via HTTP API."""
+        if not self._token and not await self.login():
+            return False
+
+        device = self.devices.get(device_id)
+        if not device:
+            _LOGGER.error("Device %s not found", device_id)
+            return False
+
+        # Get configured heat_type from features
+        heat_type = None
+        if device_config := self._device_configs.get(device_id):
+            heat_type = device_config.features.get("heat_type")
+            
+        if not heat_type:
+            _LOGGER.error("No heat_type configured for device %s", device_id)
+            return False
+
+        try:
+            async with asyncio.timeout(self.connect_timeout):
+                headers = {
+                    "Authorization": f"Bearer {self._token}",
+                    # "Content-Type": "application/x-www-form-urlencoded" # aiohttp handles this with data=
+                }
+                
+                # The user specified POST request with parameters
+                # It seems to be form data or query params? 
+                # "参数是{byteStr=...&mac=...&type=...}" usually implies form data or query params.
+                # Given it's a POST, form-encoded body is most likely.
+                
+                payload = {
+                    "byteStr": schedule_data,
+                    "mac": device.get("mac"),
+                    "type": heat_type,
+                }
+                
+                from ..const import SAVE_SCHEDULE_URL
+                
+                _LOGGER.warning("Saving schedule with payload: %s", payload)
+                response = await self._session.post(
+                    SAVE_SCHEDULE_URL,
+                    data=payload, # data= for form-encoded, json= for JSON
+                    headers=headers,
+                )
+                resp_json = await response.json()
+                _LOGGER.warning("Save schedule response: %s", resp_json)
+
+                if resp_json.get("success") is not True:
+                    _LOGGER.error(
+                        "Failed to save schedule for device %s: %s",
+                        device_id,
+                        resp_json.get("msg", "Unknown error"),
+                    )
+                    return False
+
+                _LOGGER.debug("Successfully saved schedule for device %s", device_id)
+                return True
+
+        except (TimeoutError, aiohttp.ClientError) as err:
+            _LOGGER.error("Error saving schedule info: %s", err)
+            return False
+
     @callback
     def _handle_state_update(self, device_id: str, state_data: dict[str, Any]) -> None:
         """Handle state updates from MQTT."""
@@ -221,6 +358,20 @@ class RinnaiClient:
         _LOGGER.debug("MQTT state update for device %s", device_id)
 
         self.device_states[device_id].update(state_data)
+        
+        # Sync heatingReservationMode to byteStr if present
+        # This ensures entities that prioritize byteStr (HTTP) also get MQTT updates
+        if "heatingReservationMode" in state_data:
+            self.device_states[device_id]["byteStr"] = state_data["heatingReservationMode"]
+            _LOGGER.debug("Synced heatingReservationMode to byteStr for device %s", device_id)
+
+        # Notify callbacks
+        if device_id in self._state_callbacks:
+            for callback_func in self._state_callbacks[device_id]:
+                try:
+                    callback_func(self.device_states[device_id])
+                except Exception as err:
+                    _LOGGER.error("Error in state callback for device %s: %s", device_id, err)
 
     async def _setup_mqtt_for_device(self, device_id: str) -> None:
         """Set up MQTT subscriptions for a device."""
@@ -280,6 +431,14 @@ class RinnaiClient:
                             state_data = self._process_energy_data(payload, device_id)
                             if state_data:
                                 self._handle_state_update(device_id, state_data)
+                        elif(
+                            topic_type == "inf"
+                            and payload.get("enl")
+                            and payload.get("code") == "03F1"
+                        ):
+                            state_data = self._process_reservation_info(payload)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)    
                     except json.JSONDecodeError:
                         _LOGGER.error("Invalid JSON in MQTT message: %s", msg.payload)
                     except (ValueError, TypeError, KeyError) as err:
@@ -292,6 +451,23 @@ class RinnaiClient:
                 self._mqtt_subscriptions[f"{device_id}_{topic_type}"] = subscription
 
     def _process_device_info(self, parsed_data: dict[str, Any]) -> dict[str, Any]:
+        """Extract device information from MQTT message without formatting."""
+        state_data = {}
+        for param in parsed_data.get("enl", []):
+            try:
+                param_id = param.get("id")
+                param_data = param.get("data")
+
+                if not param_id or not param_data:
+                    continue
+                state_data[param_id] = param_data
+
+            except (ValueError, TypeError, KeyError) as err:
+                _LOGGER.error("Error extracting parameter %s: %s", param_id, err)
+
+        return state_data
+    
+    def _process_reservation_info(self, parsed_data: dict[str, Any]) -> dict[str, Any]:
         """Extract device information from MQTT message without formatting."""
         state_data = {}
         for param in parsed_data.get("enl", []):
