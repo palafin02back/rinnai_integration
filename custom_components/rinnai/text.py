@@ -75,7 +75,7 @@ class RinnaiHeatingScheduleTextEntity(CoordinatorEntity, TextEntity):
         if not state:
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
         if not raw_hex or len(raw_hex) < 34:
             return
 
@@ -97,7 +97,7 @@ class RinnaiHeatingScheduleTextEntity(CoordinatorEntity, TextEntity):
         if not state:
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
         if not raw_hex or len(raw_hex) < 34:
             _LOGGER.warning("Cannot set schedule: heatingReservationMode not available")
             return
@@ -109,6 +109,9 @@ class RinnaiHeatingScheduleTextEntity(CoordinatorEntity, TextEntity):
         start_idx = 4 + (self._mode_index - 1) * 6
         
         # Keep everything else the same
+        # prefix includes Status (byte 0) and Active Mode (byte 1)
+        # So this operation ONLY updates the schedule for the target mode
+        # and DOES NOT switch the active mode or toggle the power status.
         prefix = raw_hex[:start_idx]
         suffix = raw_hex[start_idx + 6:]
         
@@ -116,9 +119,11 @@ class RinnaiHeatingScheduleTextEntity(CoordinatorEntity, TextEntity):
         
         _LOGGER.debug("Updating schedule for Mode %d: %s -> %s", self._mode_index, value, new_mode_hex)
         
-        # Send command
-        command = {"heatingReservationMode": new_full_hex}
-        await self.coordinator.async_send_command(self._device_id, command)
+        # Send command via HTTP
+        await self.coordinator.client.save_schedule_hour(self._device_id, new_full_hex)
+        
+        # Refresh schedule data
+        await self.coordinator.async_refresh_schedule(self._device_id)
         
         # Optimistic update
         self._attr_native_value = value

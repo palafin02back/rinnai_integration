@@ -62,6 +62,30 @@ class RinnaiHeatingReservationModeSelect(CoordinatorEntity, SelectEntity):
     def _device_state(self):
         return self.coordinator.get_device_state(self._device_id)
 
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        if not self._device or not self._device.online:
+            return False
+            
+        # Check if reservation is on
+        state = self._device_state
+        if not state:
+            return False
+            
+        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        
+        if not raw_hex or len(raw_hex) < 2:
+            return False
+            
+        try:
+            # Byte 0 is status (00=Off, 01=On)
+            status_byte = int(raw_hex[0:2], 16)
+            return status_byte == 1
+        except ValueError:
+            return False
+
     @callback
     def _handle_coordinator_update(self) -> None:
         self._update_attributes()
@@ -72,7 +96,8 @@ class RinnaiHeatingReservationModeSelect(CoordinatorEntity, SelectEntity):
         if not state:
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
         if not raw_hex or len(raw_hex) < 4:
             self._attr_current_option = None
             return
@@ -93,7 +118,8 @@ class RinnaiHeatingReservationModeSelect(CoordinatorEntity, SelectEntity):
         if not state:
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
         if not raw_hex or len(raw_hex) < 34:
             _LOGGER.warning("Cannot set reservation mode: heatingReservationMode not available")
             return
@@ -102,18 +128,69 @@ class RinnaiHeatingReservationModeSelect(CoordinatorEntity, SelectEntity):
             mode_index = int(option.split(" ")[1])
             
             # Construct new hex
-            # Byte 1 is at index 2-4
+            # Byte 0 is status (Force to 01=On when switching modes)
+            # Byte 1 is mode index (at index 2-4)
+            new_status_hex = "01"
             new_mode_hex = f"{mode_index:02X}"
-            new_full_hex = raw_hex[:2] + new_mode_hex + raw_hex[4:]
+            
+            # Start building the new hex string
+            # We take the original hex, but replace the first 4 characters (Status + Mode Index)
+            # new_full_hex = new_status_hex + new_mode_hex + raw_hex[4:]
+            
+            # Handle presets for Mode 1-3
+            device = self._device
+            preset_hex = None
+            if device and device.config:
+                presets = device.config.features.get("reservation_mode_presets", {})
+                preset_hex = presets.get(str(mode_index))
+            
+            if preset_hex and len(preset_hex) == 34:
+                # Full hex string preset provided by user
+                new_full_hex = preset_hex
+                _LOGGER.debug("Applying full preset for Mode %d: %s", mode_index, preset_hex)
+            elif preset_hex and len(preset_hex) == 6:
+                # If we have a preset, we need to replace the specific 3 bytes (6 chars) for this mode
+                # The schedule data starts at index 4 (after Status and Mode Index)
+                # Mode 1: index 4-10
+                # Mode 2: index 10-16
+                # Mode 3: index 16-22
+                # Mode 4: index 22-28
+                # Mode 5: index 28-34
+                
+                start_idx = 4 + ((mode_index - 1) * 6)
+                end_idx = start_idx + 6
+                
+                # Reconstruct the full hex string
+                # 1. New Status (01)
+                # 2. New Mode Index
+                # 3. Data before the target mode
+                # 4. New Preset Data for the target mode
+                # 5. Data after the target mode
+                
+                new_full_hex = (
+                    new_status_hex + 
+                    new_mode_hex + 
+                    raw_hex[4:start_idx] + 
+                    preset_hex + 
+                    raw_hex[end_idx:]
+                )
+                _LOGGER.debug("Applying preset for Mode %d: %s", mode_index, preset_hex)
+            else:
+                # No preset, just change status and mode index, keep existing schedule data
+                new_full_hex = new_status_hex + new_mode_hex + raw_hex[4:]
             
             _LOGGER.debug("Setting reservation mode to %s (%d)", option, mode_index)
             
-            command = {"heatingReservationMode": new_full_hex}
-            await self.coordinator.async_send_command(self._device_id, command)
-            
-            # Optimistic update
-            self._attr_current_option = option
-            self.async_write_ha_state()
+            # Use HTTP method to save schedule
+            if await self.coordinator.client.save_schedule_hour(self._device_id, new_full_hex):
+                # Refresh schedule info to confirm change
+                await self.coordinator.async_refresh_schedule(self._device_id)
+                
+                # Optimistic update
+                self._attr_current_option = option
+                self.async_write_ha_state()
+            else:
+                _LOGGER.error("Failed to set reservation mode")
             
         except (ValueError, IndexError):
             _LOGGER.error("Invalid option selected: %s", option)

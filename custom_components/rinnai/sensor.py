@@ -341,7 +341,7 @@ class RinnaiHeatingReservationSensor(CoordinatorEntity, SensorEntity):
 
         # Parse heatingReservationMode
         # Format: [Status 1B] [Index 1B] [Mode1 3B] ... [Mode5 3B]
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
         if not raw_hex or len(raw_hex) < 34:
             self._attr_native_value = "Unknown"
             return

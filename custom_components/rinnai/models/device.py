@@ -327,6 +327,10 @@ class RinnaiDevice:
         if online_status is not None:
             self.online = online_status == "1"
             
+        # Also update the state object with this data
+        # This is crucial for schedule updates (byteStr) to reach the state object
+        self.state.update_from_api_data(api_data)
+            
     def update_state(self, state_data: dict[str, Any], is_command: bool = False) -> None:
         """Update device state using State Manager."""
         if is_command:

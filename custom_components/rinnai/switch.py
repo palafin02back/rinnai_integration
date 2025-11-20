@@ -70,7 +70,9 @@ class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
             self._attr_is_on = None
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        
         if not raw_hex or len(raw_hex) < 2:
             self._attr_is_on = None
             return
@@ -95,9 +97,11 @@ class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
         if not state:
             return
 
-        raw_hex = state.raw_data.get("heatingReservationMode")
+        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
+        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        
         if not raw_hex or len(raw_hex) < 34:
-            _LOGGER.warning("Cannot set reservation state: heatingReservationMode not available")
+            _LOGGER.warning("Cannot set reservation state: schedule data not available")
             return
 
         # Construct new hex
@@ -107,9 +111,13 @@ class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
         
         _LOGGER.debug("Setting reservation state to %s", "On" if is_on else "Off")
         
-        command = {"heatingReservationMode": new_full_hex}
-        await self.coordinator.async_send_command(self._device_id, command)
-        
-        # Optimistic update
-        self._attr_is_on = is_on
-        self.async_write_ha_state()
+        # Use HTTP method to save schedule
+        if await self.coordinator.client.save_schedule_hour(self._device_id, new_full_hex):
+            # Refresh schedule info to confirm change
+            await self.coordinator.async_refresh_schedule(self._device_id)
+            
+            # Optimistic update
+            self._attr_is_on = is_on
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error("Failed to set reservation state")
