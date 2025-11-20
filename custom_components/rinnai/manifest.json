@@ -9,6 +9,8 @@
   "issue_tracker": "https://github.com/palafin02back/rinnai_integration/issues",
   "iot_class": "cloud_push",
   "quality_scale": "bronze",
-  "requirements": ["paho-mqtt>=1.6.1"],
-  "version": "v0.0.1"
+  "requirements": [
+    "paho-mqtt>=1.6.1"
+  ],
+  "version": "v0.0.2"
 }
