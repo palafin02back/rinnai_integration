@@ -1,166 +1,27 @@
-"""Support for Rinnai water heater sensors."""
-
+"""Support for Rinnai sensors."""
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 import logging
-from typing import Any, Final
+from typing import Any
 
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorDeviceClass,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from .const import (
-    ATTR_BURNING_STATE,
-    ATTR_GAS_USAGE,
-    ATTR_HEATING_BURNING_TIMES,
-    ATTR_HEATING_TEMP_HES,
-    ATTR_HEATING_TEMP_NM,
-    ATTR_HOT_WATER_BURNING_TIMES,
-    ATTR_HOT_WATER_TEMP,
-    ATTR_SUPPLY_TIME,
-    ATTR_TOTAL_HEATING_BURNING_TIME,
-    ATTR_TOTAL_HOT_WATER_BURNING_TIME,
-    ATTR_TOTAL_POWER_SUPPLY_TIME,
-    DOMAIN,
-)
-from .coordinator import RinnaiCoordinator
-from .models.device import RinnaiDevice
-
-_LOGGER = logging.getLogger(__name__)
-
-
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .const import DOMAIN
+from .coordinator import RinnaiCoordinator
+from .entity import RinnaiEntity
 from .core.util import decode_schedule_bitmap, format_schedule_string
 
-@dataclass
-class RinnaiSensorEntityDescription(SensorEntityDescription):
-    """Describes Rinnai sensor entity."""
-
-    value_fn: Callable[[Any, Any], Any] = lambda _, __: None
-
-
-SENSOR_TYPES: Final[tuple[RinnaiSensorEntityDescription, ...]] = (
-    RinnaiSensorEntityDescription(
-        key=ATTR_HOT_WATER_TEMP,
-        translation_key="hot_water_temperature",
-        name="Hot Water Temperature",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda _, state: state.hot_water_temp if state else 0,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_HEATING_TEMP_NM,
-        translation_key="heating_temperature_nm",
-        name="Heating Temperature (Normal Mode)",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda _, state: state.heating_temp_nm if state else 0,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_HEATING_TEMP_HES,
-        translation_key="heating_temperature_hes",
-        name="Heating Temperature (Energy Saving)",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda _, state: state.heating_temp_hes if state else 0,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_BURNING_STATE,
-        translation_key="burning_state",
-        name="Burning State",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda _, state: state.burning_state_ha if state else "Standby",
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_GAS_USAGE,
-        translation_key="gas_usage",
-        name="Gas Usage",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.GAS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement="m³",
-        value_fn=lambda _, state: state.gas_used if state else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_SUPPLY_TIME,
-        translation_key="supply_time",
-        name="Supply Time",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.DAYS,
-        value_fn=lambda _, state: round(state.supply_time*10/24, 2) if state else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_TOTAL_POWER_SUPPLY_TIME,
-        translation_key="total_power_supply_time",
-        name="Total Power Supply Time",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.DAYS,
-        value_fn=lambda _, state: round(state.total_power_supply_time*10/24, 2)
-        if state
-        else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_TOTAL_HEATING_BURNING_TIME,
-        translation_key="total_heating_burning_time",
-        name="Total Heating Burning Time",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        value_fn=lambda _, state: state.total_heating_burning_time
-        if state
-        else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_TOTAL_HOT_WATER_BURNING_TIME,
-        translation_key="total_hot_water_burning_time",
-        name="Total Hot Water Burning Time",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        value_fn=lambda _, state: state.total_hot_water_burning_time
-        if state
-        else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_HEATING_BURNING_TIMES,
-        translation_key="heating_burning_times",
-        name="Heating Burning Times",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement="次",
-        value_fn=lambda _, state: state.heating_burning_times * 100 if state else None,
-    ),
-    RinnaiSensorEntityDescription(
-        key=ATTR_HOT_WATER_BURNING_TIMES,
-        translation_key="hot_water_burning_times",
-        name="Hot Water Burning Times",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement="次",
-        value_fn=lambda _, state: state.hot_water_burning_times * 100 if state else None,
-    ),
-)
-
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -170,62 +31,55 @@ async def async_setup_entry(
     """Set up the Rinnai sensors based on a config entry."""
     coordinator: RinnaiCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities = [
-        RinnaiSensor(coordinator, device_id, description)
-        for device_id in coordinator.data["devices"]
-        for description in SENSOR_TYPES
-    ]
-    
-    # Add reservation sensor
+    entities = []
     for device_id in coordinator.data["devices"]:
-        entities.append(RinnaiHeatingReservationSensor(coordinator, device_id))
+        device = coordinator.get_device(device_id)
+        if not device or not device.config:
+            continue
+            
+        # Generic sensors from config
+        if sensor_configs := device.config.entities.get("sensor"):
+            for config in sensor_configs:
+                sensor_type = config.get("type", "generic")
+                if sensor_type == "reservation_sensor":
+                    entities.append(RinnaiHeatingReservationSensor(coordinator, device_id, config))
+                else:
+                    entities.append(RinnaiGenericSensor(coordinator, device_id, config))
 
     async_add_entities(entities)
 
 
-class RinnaiSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
-    """Representation of a Rinnai sensor."""
-
-    coordinator: RinnaiCoordinator
-    entity_description: RinnaiSensorEntityDescription
+class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
+    """Representation of a generic Rinnai sensor defined in config."""
 
     def __init__(
         self,
         coordinator: RinnaiCoordinator,
         device_id: str,
-        description: RinnaiSensorEntityDescription,
+        config: dict[str, Any],
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, device_id, config)
+        
+        # Set up entity description based on config
+        description = SensorEntityDescription(
+            key=config.get("key"),
+            name=config.get("name"),
+            device_class=config.get("device_class"),
+            state_class=config.get("state_class"),
+            native_unit_of_measurement=config.get("unit_of_measurement"),
+            entity_category=config.get("entity_category"),
+        )
         self.entity_description = description
-        self._device_id = device_id
+        self._value_map = config.get("value_map")
+        self._state_attribute = config.get("state_attribute")
         self._restored_native_value = None
-
-        device = coordinator.get_device(device_id)
-        if device:
-            self._attr_unique_id = f"{device_id}_{description.key}"
-            self._attr_has_entity_name = True
-            self._attr_device_info = {
-                "identifiers": {(DOMAIN, device_id)},
-                "name": device.device_name,
-                "manufacturer": "Rinnai",
-                "model": device.device_type,
-            }
-        else:
-            self._attr_unique_id = f"{device_id}_{description.key}"
-            self._attr_name = f"Rinnai Device {description.name}"
-
-        if description.key == ATTR_BURNING_STATE:
-            self._attr_translation_key = "burning_state"
-
-        self._update_attributes()
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
         await super().async_added_to_hass()
         
         if (last_state := await self.async_get_last_state()) is not None:
-            # Try to restore native value if it's a number
             try:
                 if last_state.state not in (None, "unknown", "unavailable"):
                     if self.device_class in (SensorDeviceClass.DURATION, SensorDeviceClass.GAS, SensorDeviceClass.TEMPERATURE):
@@ -233,45 +87,9 @@ class RinnaiSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                     else:
                         self._restored_native_value = last_state.state
             except (ValueError, TypeError):
-                _LOGGER.warning("Could not restore state for %s: %s", self.entity_id, last_state.state)
-
-        # Trigger update to use restored value if needed
+                pass
+        
         self._update_attributes()
-
-    @property
-    def _device(self):
-        """Get the device object."""
-        return self.coordinator.get_device(self._device_id)
-
-    @property
-    def _device_state(self):
-        """Get the device state object."""
-        return self.coordinator.get_device_state(self._device_id)
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        if not self._device or not self._device.online:
-            return False
-        if self.entity_description.key in [
-            ATTR_HOT_WATER_TEMP,
-            ATTR_HEATING_TEMP_NM,
-            ATTR_HEATING_TEMP_HES,
-        ]:
-            return True
-        state = self._device_state
-        if not state:
-            return False
-
-        mode_code = state.raw_data.get("operationMode")
-        if (
-            not mode_code
-            or not self._device.config
-            or mode_code not in self._device.config.code_to_mode
-        ):
-            return False
-
-        return True
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -281,53 +99,31 @@ class RinnaiSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
 
     def _update_attributes(self) -> None:
         """Update sensor attributes based on device state."""
-        device = self._device
-        if not device:
-            self._attr_available = False
+        if not self._state_attribute:
             return
 
-        state = self.coordinator.get_device_state(self._device_id)
-        current_value = self.entity_description.value_fn(device, state)
+        raw_value = self.get_state_value(self._state_attribute)
         
-        # # If current value is None or 0 (and 0 might be invalid for cumulative stats), try to use restored value
-        # # Note: 0 is valid for some sensors, but for cumulative counters like total time, 0 usually means "not initialized"
+        if self._value_map and str(raw_value) in self._value_map:
+            current_value = self._value_map[str(raw_value)]
+        else:
+            current_value = raw_value
+            
+        # Handle cumulative stats restoration
         is_cumulative = self.entity_description.state_class == SensorStateClass.TOTAL_INCREASING
-        
         if (current_value is None or (is_cumulative and current_value == 0)) and self._restored_native_value is not None:
              self._attr_native_value = self._restored_native_value
         else:
              self._attr_native_value = current_value
-             
 
 
-class RinnaiHeatingReservationSensor(CoordinatorEntity, SensorEntity):
+class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
     """Representation of Rinnai heating reservation status."""
 
-    def __init__(self, coordinator: RinnaiCoordinator, device_id: str) -> None:
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._device_id = device_id
-        
-        device = coordinator.get_device(device_id)
-        if device:
-            self._attr_unique_id = f"{device_id}_heating_reservation"
-            self._attr_has_entity_name = True
-            self._attr_translation_key = "heating_reservation"
-            self._attr_device_info = {
-                "identifiers": {(DOMAIN, device_id)},
-                "name": device.device_name,
-                "manufacturer": "Rinnai",
-                "model": device.device_type,
-            }
-        self._update_attributes()
-
-    @property
-    def _device(self):
-        return self.coordinator.get_device(self._device_id)
-
-    @property
-    def _device_state(self):
-        return self.coordinator.get_device_state(self._device_id)
+        super().__init__(coordinator, device_id, config)
+        self._attr_translation_key = "heating_reservation"
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -335,13 +131,10 @@ class RinnaiHeatingReservationSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     def _update_attributes(self) -> None:
-        state = self._device_state
-        if not state:
-            return
-
-        # Parse heatingReservationMode
-        # Format: [Status 1B] [Index 1B] [Mode1 3B] ... [Mode5 3B]
-        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        # Use generic get_state_value to get byteStr or heatingReservationMode
+        # The key "byte_str" or "reservation_mode" should be mapped in config
+        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
+        
         if not raw_hex or len(raw_hex) < 34:
             self._attr_native_value = "Unknown"
             return

@@ -1,0 +1,526 @@
+{
+    "name": "Rinnai Boiler G56",
+    "supported_models": [
+        "G56"
+    ],
+    "features": {
+        "heat_type": "1",
+        "gas_consumption_digits": 8,
+        "energy_data_keys": [
+            "gasUsed",
+            "supplyTime",
+            "totalPowerSupplyTime",
+            "totalHeatingBurningTime",
+            "totalHotWaterBurningTime",
+            "heatingBurningTimes",
+            "hotWaterBurningTimes"
+        ],
+        "reservation_mode_presets": {
+            "1": "0101DB446CDB006E4818C680017F80017F",
+            "2": "0102DB446CDB006E4818C680017F80017F",
+            "3": "0103DB446CDB006E4818C680017F80017F"
+        }
+    },
+    "requests": {
+        "get_schedule": {
+            "url": "/api/v1/device/getSchedule",
+            "method": "GET",
+            "params": {
+                "mac": "{mac}",
+                "type": "{heat_type}"
+            }
+        },
+        "save_schedule": {
+            "url": "/api/v1/device/saveSchedule",
+            "method": "POST",
+            "data": {
+                "byteStr": "{data}",
+                "mac": "{mac}",
+                "type": "{heat_type}"
+            }
+        }
+    },
+    "processors": {
+        "hotWaterTempSetting": [
+            "hex_to_int"
+        ],
+        "heatingTempSettingNM": [
+            "hex_to_int"
+        ],
+        "heatingTempSettingHES": [
+            "hex_to_int"
+        ],
+        "roomTempControl": [
+            "hex_to_int"
+        ],
+        "heatingOutWaterTempControl": [
+            "hex_to_int"
+        ],
+        "actualUseTime": [
+            "hex_to_int"
+        ],
+        "totalPowerSupplyTime": [
+            "hex_to_int"
+        ],
+        "totalHeatingBurningTime": [
+            "hex_to_int"
+        ],
+        "totalHotWaterBurningTime": [
+            "hex_to_int"
+        ],
+        "heatingBurningTimes": [
+            "hex_to_int"
+        ],
+        "hotWaterBurningTimes": [
+            "hex_to_int"
+        ],
+        "gasConsumption": [
+            "hex_to_int",
+            {
+                "func": "divide",
+                "args": [
+                    10000
+                ]
+            }
+        ]
+    },
+    "state_mapping": {
+        "hot_water_temp": "hotWaterTempSetting",
+        "heating_temp_nm": "heatingTempSettingNM",
+        "heating_temp_hes": "heatingTempSettingHES",
+        "operation_mode": "operationMode",
+        "burning_state": "burningState",
+        "gas_usage": "gasConsumption",
+        "supply_time": "actualUseTime",
+        "total_power_supply_time": "totalPowerSupplyTime",
+        "total_heating_burning_time": "totalHeatingBurningTime",
+        "total_hot_water_burning_time": "totalHotWaterBurningTime",
+        "heating_burning_times": "heatingBurningTimes",
+        "hot_water_burning_times": "hotWaterBurningTimes",
+        "reservation_mode": "heatingReservationMode",
+        "byte_str": "byteStr"
+    },
+    "entities": {
+        "water_heater": [
+            {
+                "name": "Water Heater",
+                "key": "main",
+                "min_temp": 35,
+                "max_temp": 65,
+                "step": 1,
+                "command_topic": "hotWaterTempSetting",
+                "state_attribute": "hot_water_temp"
+            }
+        ],
+        "climate": [
+            {
+                "name": "Heating",
+                "key": "main",
+                "min_temp": 35,
+                "max_temp": 85,
+                "step": 1,
+                "modes": {
+                    "standby": {
+                        "label": "Heating Off",
+                        "value": "standby"
+                    },
+                    "normal": {
+                        "label": "Normal Heating",
+                        "value": "normal"
+                    },
+                    "energy_saving": {
+                        "label": "Heating Energy Saving",
+                        "value": "energy_saving"
+                    },
+                    "outdoor": {
+                        "label": "Heating Outdoor",
+                        "value": "outdoor"
+                    },
+                    "rapid": {
+                        "label": "Fast Heating",
+                        "value": "rapid"
+                    }
+                },
+                "transitions": {
+                    "standby_to_normal": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31"
+                        }
+                    ],
+                    "standby_to_energy_saving": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31"
+                        }
+                    ],
+                    "standby_to_outdoor": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "standby_to_rapid": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_standby": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_energy_saving": [
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_outdoor": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_rapid": [
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_standby": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_normal": [
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_outdoor": [
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_rapid": [
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_standby": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_normal": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_energy_saving": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_rapid": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31"
+                        }
+                    ],
+                    "rapid_to_standby": [
+                        {
+                            "cmd": "summerWinter",
+                            "value": "31"
+                        }
+                    ],
+                    "rapid_to_normal": [
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31"
+                        }
+                    ],
+                    "rapid_to_energy_saving": [
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "energySavingMode",
+                            "value": "31"
+                        }
+                    ],
+                    "rapid_to_outdoor": [
+                        {
+                            "cmd": "rapidHeating",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ]
+                },
+                "mode_codes": {
+                    "standby": [
+                        "0",
+                        "1",
+                        "2"
+                    ],
+                    "normal": [
+                        "3"
+                    ],
+                    "energy_saving": [
+                        "B",
+                        "4B"
+                    ],
+                    "outdoor": [
+                        "13",
+                        "53"
+                    ],
+                    "rapid": [
+                        "43",
+                        "63"
+                    ]
+                },
+                "temp_settings": {
+                    "normal": {
+                        "read": "heating_temp_nm",
+                        "write": "heatingTempSettingNM"
+                    },
+                    "energy_saving": {
+                        "read": "heating_temp_hes",
+                        "write": "heatingTempSettingHES"
+                    },
+                    "outdoor": {
+                        "fixed": 35
+                    },
+                    "rapid": {
+                        "fixed": 85
+                    }
+                },
+                "active_states": [
+                    "31",
+                    "32"
+                ]
+            }
+        ],
+        "sensor": [
+            {
+                "key": "hot_water_temp",
+                "name": "Hot Water Temperature",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "hot_water_temp"
+            },
+            {
+                "key": "heating_temp_nm",
+                "name": "Heating Temperature (Normal Mode)",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "heating_temp_nm"
+            },
+            {
+                "key": "heating_temp_hes",
+                "name": "Heating Temperature (Energy Saving)",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "heating_temp_hes"
+            },
+            {
+                "key": "burning_state",
+                "name": "Burning State",
+                "entity_category": "diagnostic",
+                "state_attribute": "burning_state",
+                "value_map": {
+                    "30": "Standby",
+                    "31": "Heating Water",
+                    "32": "Burning",
+                    "33": "Error"
+                }
+            },
+            {
+                "key": "gas_usage",
+                "name": "Gas Usage",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "gas_usage"
+            },
+            {
+                "key": "supply_time",
+                "name": "Supply Time",
+                "device_class": "duration",
+                "unit_of_measurement": "d",
+                "entity_category": "diagnostic",
+                "state_attribute": "supply_time",
+                "processors": [
+                    {
+                        "func": "divide",
+                        "args": [
+                            24
+                        ]
+                    }
+                ]
+            },
+            {
+                "key": "total_power_supply_time",
+                "name": "Total Power Supply Time",
+                "device_class": "duration",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "d",
+                "entity_category": "diagnostic",
+                "state_attribute": "total_power_supply_time",
+                "processors": [
+                    {
+                        "func": "divide",
+                        "args": [
+                            24
+                        ]
+                    }
+                ]
+            },
+            {
+                "key": "total_heating_burning_time",
+                "name": "Total Heating Burning Time",
+                "device_class": "duration",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "h",
+                "entity_category": "diagnostic",
+                "state_attribute": "total_heating_burning_time"
+            },
+            {
+                "key": "total_hot_water_burning_time",
+                "name": "Total Hot Water Burning Time",
+                "device_class": "duration",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "h",
+                "entity_category": "diagnostic",
+                "state_attribute": "total_hot_water_burning_time"
+            },
+            {
+                "key": "heating_burning_times",
+                "name": "Heating Burning Times",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "次",
+                "entity_category": "diagnostic",
+                "state_attribute": "heating_burning_times",
+                "processors": [
+                    {
+                        "func": "multiply",
+                        "args": [
+                            100
+                        ]
+                    }
+                ]
+            },
+            {
+                "key": "hot_water_burning_times",
+                "name": "Hot Water Burning Times",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "次",
+                "entity_category": "diagnostic",
+                "state_attribute": "hot_water_burning_times",
+                "processors": [
+                    {
+                        "func": "multiply",
+                        "args": [
+                            100
+                        ]
+                    }
+                ]
+            },
+            {
+                "key": "heating_reservation",
+                "name": "Heating Reservation",
+                "type": "reservation_sensor"
+            }
+        ],
+        "switch": [
+            {
+                "key": "heating_reservation",
+                "name": "Heating Reservation",
+                "type": "reservation_switch"
+            }
+        ],
+        "select": [
+            {
+                "key": "reservation_mode",
+                "name": "Reservation Mode",
+                "options": [
+                    "Mode 1",
+                    "Mode 2",
+                    "Mode 3",
+                    "Mode 4",
+                    "Mode 5"
+                ],
+                "command_type": "schedule_mode"
+            }
+        ],
+        "text": [
+            {
+                "key": "schedule_mode_4",
+                "name": "Schedule Mode 4",
+                "mode_index": 4,
+                "command_type": "schedule_data"
+            },
+            {
+                "key": "schedule_mode_5",
+                "name": "Schedule Mode 5",
+                "mode_index": 5,
+                "command_type": "schedule_data"
+            }
+        ]
+    }
+}

@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,41 +25,27 @@ async def async_setup_entry(
 
     entities = []
     for device_id in coordinator.data["devices"]:
-        # Add heating reservation switch
-        entities.append(RinnaiHeatingReservationSwitch(coordinator, device_id))
+        device = coordinator.get_device(device_id)
+        if not device or not device.config:
+            continue
+            
+        if switch_configs := device.config.entities.get("switch"):
+            for config in switch_configs:
+                switch_type = config.get("type", "generic")
+                if switch_type == "reservation_switch":
+                    entities.append(RinnaiHeatingReservationSwitch(coordinator, device_id, config))
 
     async_add_entities(entities)
 
 
-class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
+class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
     """Representation of Rinnai heating reservation switch."""
 
-    def __init__(self, coordinator: RinnaiCoordinator, device_id: str) -> None:
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
         """Initialize the switch."""
-        super().__init__(coordinator)
-        self._device_id = device_id
-        
-        device = coordinator.get_device(device_id)
-        if device:
-            self._attr_unique_id = f"{device_id}_heating_reservation_switch"
-            self._attr_has_entity_name = True
-            self._attr_translation_key = "heating_reservation"
-            self._attr_device_info = {
-                "identifiers": {(DOMAIN, device_id)},
-                "name": device.device_name,
-                "manufacturer": "Rinnai",
-                "model": device.device_type,
-            }
-        
+        super().__init__(coordinator, device_id, config)
+        self._attr_translation_key = "heating_reservation"
         self._update_attributes()
-
-    @property
-    def _device(self):
-        return self.coordinator.get_device(self._device_id)
-
-    @property
-    def _device_state(self):
-        return self.coordinator.get_device_state(self._device_id)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -65,13 +53,7 @@ class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
         self.async_write_ha_state()
 
     def _update_attributes(self) -> None:
-        state = self._device_state
-        if not state:
-            self._attr_is_on = None
-            return
-
-        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
-        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
         
         if not raw_hex or len(raw_hex) < 2:
             self._attr_is_on = None
@@ -93,12 +75,7 @@ class RinnaiHeatingReservationSwitch(CoordinatorEntity, SwitchEntity):
         await self._set_reservation_state(False)
 
     async def _set_reservation_state(self, is_on: bool) -> None:
-        state = self._device_state
-        if not state:
-            return
-
-        # Try to get from byteStr (HTTP) first, then heatingReservationMode (MQTT)
-        raw_hex = state.raw_data.get("byteStr") or state.raw_data.get("heatingReservationMode")
+        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
         
         if not raw_hex or len(raw_hex) < 34:
             _LOGGER.warning("Cannot set reservation state: schedule data not available")

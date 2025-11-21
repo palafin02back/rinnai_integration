@@ -16,7 +16,6 @@ class ConfigManager:
     _instance = None
     _configs: dict[str, RinnaiDeviceConfig] = {}
     _model_map: dict[str, RinnaiDeviceConfig] = {}
-    _default_config: RinnaiDeviceConfig | None = None
 
     def __new__(cls):
         """Singleton pattern."""
@@ -45,25 +44,18 @@ class ConfigManager:
                         # Map supported models to this config
                         for model in config.supported_models:
                             self._model_map[model] = config
-                        
-                        if key == "default":
-                            self._default_config = config
                             
                         _LOGGER.debug("Loaded device config: %s (models: %s)", key, config.supported_models)
                 except Exception as e:
                     _LOGGER.error("Failed to load config %s: %s", filename, e)
 
-    def get_config(self, device_model: str = None) -> RinnaiDeviceConfig:
+    def get_config(self, device_model: str = None) -> RinnaiDeviceConfig | None:
         """Get configuration for specific device model."""
         if device_model and device_model in self._model_map:
             return self._model_map[device_model]
             
-        if self._default_config:
-            return self._default_config
-            
-        # Fallback if no default config loaded
-        _LOGGER.warning("No configuration found, returning empty default")
-        return RinnaiDeviceConfig.from_dict({})
+        _LOGGER.warning("No configuration found for device model: %s", device_model)
+        return None
 
 # Global instance
 config_manager = ConfigManager()
