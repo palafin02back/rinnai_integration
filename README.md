@@ -23,6 +23,7 @@
   - 切换预约模式（标准型、上班族、节能型、自定义1、自定义2）。
   - 自定义“自定义模式”的预约时间段。
 - **能耗监测**: 追踪燃气用量和运行时间。
+<img width="1282" height="762" alt="image" src="https://github.com/user-attachments/assets/4bdac782-df41-4b06-bf1b-c2d6afc5e73c" />
 
 ## 安装
 
