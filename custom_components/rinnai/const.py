@@ -12,25 +12,11 @@ CONF_UPDATE_INTERVAL: Final = "update_interval"
 CONF_CONNECT_TIMEOUT: Final = "connect_timeout"
 
 # Attributes and service names
-ATTR_HOT_WATER_TEMP: Final = "hot_water_temperature"
-ATTR_HEATING_TEMP_NM: Final = "heating_temperature_nm"
-ATTR_HEATING_TEMP_HES: Final = "heating_temperature_hes"
-ATTR_ENERGY_SAVING_MODE: Final = "energy_saving_mode"
-ATTR_OUTDOOR_MODE: Final = "outdoor_mode"
-ATTR_RAPID_HEATING: Final = "rapid_heating"
-ATTR_SUMMER_WINTER: Final = "summer_winter"
-ATTR_GAS_USAGE: Final = "gas_usage"
-ATTR_SUPPLY_TIME: Final = "supply_time"
-ATTR_BURNING_STATE: Final = "burning_state"
-# 新增属性常量
-ATTR_TOTAL_POWER_SUPPLY_TIME: Final = "total_power_supply_time"
-ATTR_TOTAL_HEATING_BURNING_TIME: Final = "total_heating_burning_time"
-ATTR_TOTAL_HOT_WATER_BURNING_TIME: Final = "total_hot_water_burning_time"
-ATTR_HEATING_BURNING_TIMES: Final = "heating_burning_times"
-ATTR_HOT_WATER_BURNING_TIMES: Final = "hot_water_burning_times"
+# Attributes and service names
+# These are now defined in device configuration JSON files
 
 # Supported platforms
-PLATFORMS: Final = frozenset(["sensor", "water_heater", "climate"])
+PLATFORMS: Final = frozenset(["sensor", "water_heater", "climate", "switch", "select", "text"])
 
 # Default values
 DEFAULT_UPDATE_INTERVAL: Final = 300  # seconds
@@ -48,15 +34,60 @@ ENTITY_CATEGORY_DIAGNOSTIC: Final = "diagnostic"
 ENTITY_CATEGORY_CONFIG: Final = "config"
 
 HOST: Final = "https://iot.rinnai.com.cn/app"
-LOGIN_URL: Final = f"{HOST}/V1/login"
-INFO_URL: Final = f"{HOST}/V1/device/list"
-PROCESS_PARAMETER_URL: Final = f"{HOST}/V1/device/processParameter"
-GET_SCHEDULE_URL: Final = f"{HOST}/V1/device/schedule/getScheduleInfo"
-SAVE_SCHEDULE_URL: Final = f"{HOST}/V1/device/schedule/saveScheduleHour"
+BASE_URL: Final = HOST
 
 # Rinnai Smart Home app built-in accessKey
 AK: Final = "A39C66706B83CCF0C0EE3CB23A39454D"
 REFESH_TIME: Final = 86400  # 24 hours
+
+# Centralized API Request Definitions
+API_DEFINITIONS: Final = {
+    "login": {
+        "url": "/V1/login",
+        "method": "GET"
+    },
+    "device_list": {
+        "url": "/V1/device/list",
+        "method": "GET"
+    },
+    "device_state": {
+        "url": "/V1/device/processParameter",
+        "method": "GET"
+    },
+    "get_schedule": {
+        "url": "/V1/device/schedule/getScheduleInfo",
+        "method": "GET",
+        "params": {
+            "mac": "{mac}",
+            "type": "{heat_type}"
+        }
+    },
+    "save_schedule": {
+        "url": "/V1/device/schedule/saveScheduleHour",
+        "method": "POST",
+        "data": {
+            "byteStr": "{data}",
+            "mac": "{mac}",
+            "type": "{heat_type}"
+        }
+    }
+}
+
+# MQTT Definitions
+MQTT_DEFINITIONS: Final = {
+    "topics": {
+        "info": "rinnai/SR/01/SR/{mac}/inf/",
+        "energy": "rinnai/SR/01/SR/{mac}/stg/",
+        "set": "rinnai/SR/01/SR/{mac}/set/"
+    },
+    "protocol": {
+        "info_code": "FFFF",
+        "reservation_code": "03F1",
+        "energy_pattern": "J05",
+        "command_pattern": "J00",
+        "command_sum": "1"
+    }
+}
 
 
 

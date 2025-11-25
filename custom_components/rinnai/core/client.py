@@ -14,7 +14,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from ..const import AK, INFO_URL, LOGIN_URL, PROCESS_PARAMETER_URL, REFESH_TIME, BASE_URL
+from ..const import AK, REFESH_TIME, BASE_URL, API_DEFINITIONS, MQTT_DEFINITIONS
 from .config_manager import config_manager
 from .mqtt_client import RinnaiMQTTClient
 
@@ -124,8 +124,9 @@ class RinnaiClient:
                         "identityLevel": "0",
                     }
 
+                    url = f"{BASE_URL}{API_DEFINITIONS['login']['url']}"
                     response = await self._session.get(
-                        LOGIN_URL,
+                        url,
                         params=login_data,
                         headers={"Content-Type": "application/json"},
                     )
@@ -153,7 +154,8 @@ class RinnaiClient:
         try:
             async with asyncio.timeout(self.connect_timeout):
                 headers = {"Authorization": f"Bearer {self._token}"}
-                response = await self._session.get(INFO_URL, headers=headers)
+                url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
+                response = await self._session.get(url, headers=headers)
                 resp_json = await response.json()
 
                 if resp_json.get("success") is not True:
@@ -177,7 +179,7 @@ class RinnaiClient:
                     if device_id not in self.device_states:
                         self.device_states[device_id] = {}
                     
-                    device_type = device.get("deviceType", "Unknown")
+                    device_type = device.get("deviceType")
                     self._device_configs[device_id] = config_manager.get_config(device_type)
 
                 return True
@@ -193,8 +195,9 @@ class RinnaiClient:
         try:
             async with asyncio.timeout(self.connect_timeout):
                 headers = {"Authorization": f"Bearer {self._token}"}
+                url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
                 response = await self._session.get(
-                    PROCESS_PARAMETER_URL,
+                    url,
                     params={"deviceId": device_id},
                     headers=headers,
                 )
@@ -237,9 +240,17 @@ class RinnaiClient:
             _LOGGER.error("No config for device %s", device_id)
             return None
             
-        request_config = config.requests.get(request_name)
+        # Check if request is supported by device
+        if request_name not in config.supported_requests:
+            _LOGGER.warning("Request %s not supported by device %s", request_name, device_id)
+            return None
+            
+        # Get request definition from central constants
+        from ..const import API_DEFINITIONS
+        request_config = API_DEFINITIONS.get(request_name)
+        
         if not request_config:
-            _LOGGER.error("Request %s not defined in config for device %s", request_name, device_id)
+            _LOGGER.error("Request definition for %s not found in API_DEFINITIONS", request_name)
             return None
 
         # Prepare context for substitution
@@ -297,9 +308,12 @@ class RinnaiClient:
                 
                 if resp_json.get("success") is not True:
                     _LOGGER.error(
-                        "Request %s failed: %s",
+                        "Request %s failed. URL: %s, Params: %s, Data: %s, Response: %s",
                         request_name,
-                        resp_json.get("msg", "Unknown error"),
+                        url,
+                        final_params,
+                        final_data,
+                        resp_json
                     )
                     return False
 
@@ -348,10 +362,13 @@ class RinnaiClient:
         if not device_mac:
             return
 
+
         topics = {
-            "inf": f"rinnai/SR/01/SR/{device_mac}/inf/",
-            "stg": f"rinnai/SR/01/SR/{device_mac}/stg/",
+            "inf": MQTT_DEFINITIONS["topics"]["info"].format(mac=device_mac),
+            "stg": MQTT_DEFINITIONS["topics"]["energy"].format(mac=device_mac),
         }
+        
+        proto = MQTT_DEFINITIONS["protocol"]
 
         for topic_type, topic in topics.items():
             @callback
@@ -359,15 +376,15 @@ class RinnaiClient:
                 try:
                     payload = json.loads(msg.payload)
                     
-                    if (topic_type == "inf" and payload.get("enl") and payload.get("code") == "FFFF"):
+                    if (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["info_code"]):
                         state_data = self._process_device_info(payload)
                         if state_data:
                             self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "stg" and payload.get("egy") and payload.get("ptn") == "J05"):
+                    elif (topic_type == "stg" and payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]):
                         state_data = self._process_energy_data(payload, device_id)
                         if state_data:
                             self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "inf" and payload.get("enl") and payload.get("code") == "03F1"):
+                    elif (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["reservation_code"]):
                         state_data = self._process_reservation_info(payload)
                         if state_data:
                             self._handle_state_update(device_id, state_data)
@@ -413,19 +430,24 @@ class RinnaiClient:
             return False
 
         device_data = self.devices[device_id]
-        auth_code = device_data.get("authCode", "03F1")
+        # Default to reservation code if not present, though usually authCode is in device data
+        from ..const import MQTT_DEFINITIONS
+        proto = MQTT_DEFINITIONS["protocol"]
+        
+        auth_code = device_data.get("authCode", proto["reservation_code"])
         device_mac = device_data.get("mac")
         if not device_mac:
             return False
 
         device_classid = device_data.get("classID")
-        set_topic = f"rinnai/SR/01/SR/{device_mac}/set/"
+        set_topic = MQTT_DEFINITIONS["topics"]["set"].format(mac=device_mac)
+        
         rinnai_message = {
             "code": auth_code,
             "enl": [{"data": str(value), "id": key} for key, value in command.items()],
             "id": device_classid,
-            "ptn": "J00",
-            "sum": "1",
+            "ptn": proto["command_pattern"],
+            "sum": proto["command_sum"],
         }
 
         try:

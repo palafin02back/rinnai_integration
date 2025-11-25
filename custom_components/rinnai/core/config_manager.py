@@ -41,20 +41,16 @@ class ConfigManager:
                         key = filename[:-5]
                         self._configs[key] = config
                         
-                        # Map supported models to this config
-                        for model in config.supported_models:
-                            self._model_map[model] = config
-                            
-                        _LOGGER.debug("Loaded device config: %s (models: %s)", key, config.supported_models)
+                        _LOGGER.debug("Loaded device config: %s", key)
                 except Exception as e:
                     _LOGGER.error("Failed to load config %s: %s", filename, e)
 
     def get_config(self, device_model: str = None) -> RinnaiDeviceConfig | None:
         """Get configuration for specific device model."""
-        if device_model and device_model in self._model_map:
-            return self._model_map[device_model]
+        if device_model and device_model in self._configs:
+            return self._configs[device_model]
             
-        _LOGGER.warning("No configuration found for device model: %s", device_model)
+        _LOGGER.warning("No configuration found for device model: '%s'. Available configs: %s", device_model, list(self._configs.keys()))
         return None
 
 # Global instance
