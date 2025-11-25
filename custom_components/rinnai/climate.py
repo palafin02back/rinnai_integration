@@ -1,7 +1,6 @@
 """Support for Rinnai heating climate control."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -57,27 +56,33 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         )
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        # Initialize attributes from entity config
-        self._attr_min_temp = config.get("min_temp", 35)
-        self._attr_max_temp = config.get("max_temp", 85)
-        self._attr_target_temperature_step = config.get("step", 1)
+        # Mandatory configuration
+        self._attr_min_temp = config["min_temp"]
+        self._attr_max_temp = config["max_temp"]
+        self._attr_target_temperature_step = config["step"]
         
-        self._modes_config = config.get("modes", {})
-        self._transitions = config.get("transitions", {})
-        self._mode_codes = config.get("mode_codes", {})
-        self._temp_settings = config.get("temp_settings", {})
-        self._active_states = config.get("active_states", ["31", "32"])
+        self._modes_config = config["modes"]
+        self._transitions = config["transitions"]
+        self._mode_codes = config["mode_codes"]
+        self._temp_settings = config["temp_settings"]
+        self._active_states = config["active_states"]
         
-        # Build preset modes list (excluding standby)
+        # Defaults config
+        defaults = config.get("defaults", {})
+        self._off_mode = defaults.get("off_mode", "standby")
+        self._on_mode = defaults.get("on_mode", "normal")
+        self._action_attribute = defaults.get("action_attribute", "burning_state")
+        
+        # Build preset modes list (excluding off mode)
         self._attr_preset_modes = []
         for mode_key, mode_data in self._modes_config.items():
-            if mode_key != "standby":
+            if mode_key != self._off_mode:
                 self._attr_preset_modes.append(mode_data.get("label"))
 
         self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
         
-        # Current internal mode key (e.g. 'normal', 'standby')
-        self._current_mode = "standby"
+        # Current internal mode key
+        self._current_mode = self._off_mode
 
         self._update_attributes()
 
@@ -92,13 +97,13 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         for mode_key, codes in self._mode_codes.items():
             if code in codes:
                 return mode_key
-        return "standby"
+        return self._off_mode
 
     def _update_temperature_attributes(self) -> None:
         """Update temperature attributes based on current mode."""
         # Reset min/max to defaults
-        self._attr_min_temp = self._entity_config.get("min_temp", 35)
-        self._attr_max_temp = self._entity_config.get("max_temp", 85)
+        self._attr_min_temp = self._entity_config["min_temp"]
+        self._attr_max_temp = self._entity_config["max_temp"]
         
         temp_config = self._temp_settings.get(self._current_mode)
         if not temp_config:
@@ -129,7 +134,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         self._current_mode = self._get_mode_from_code(str(mode_code))
         
         # Set preset & HVAC mode
-        if self._current_mode == "standby":
+        if self._current_mode == self._off_mode:
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
             self._attr_preset_mode = None
@@ -142,7 +147,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
                 self._attr_preset_mode = mode_data.get("label")
             
             # Determine action
-            burning_state = str(self.get_state_value("burning_state"))
+            burning_state = str(self.get_state_value(self._action_attribute))
             if burning_state in self._active_states:
                 self._attr_hvac_action = HVACAction.HEATING
             else:
@@ -177,11 +182,11 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         """Set HVAC mode."""
         target_mode = None
         if hvac_mode == HVACMode.HEAT:
-            if self._current_mode == "standby":
-                target_mode = "normal"
+            if self._current_mode == self._off_mode:
+                target_mode = self._on_mode
         elif hvac_mode == HVACMode.OFF:
-            if self._current_mode != "standby":
-                target_mode = "standby"
+            if self._current_mode != self._off_mode:
+                target_mode = self._off_mode
                 
         if target_mode:
             await self._perform_transition(target_mode)

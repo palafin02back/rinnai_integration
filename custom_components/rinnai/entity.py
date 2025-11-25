@@ -40,8 +40,7 @@ class RinnaiEntity(CoordinatorEntity, Entity):
             if name := entity_config.get("name"):
                 self._attr_name = name
                 
-            # Set translation key if provided
-            if translation_key := entity_config.get("translation_key"):
+            if translation_key := entity_config.get("key"):
                 self._attr_translation_key = translation_key
                 
             self._attr_device_info = {

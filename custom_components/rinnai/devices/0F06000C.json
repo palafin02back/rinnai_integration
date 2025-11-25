@@ -1,10 +1,7 @@
 {
     "name": "Rinnai Boiler G56",
-    "supported_models": [
-        "G56"
-    ],
     "features": {
-        "heat_type": "1",
+        "heat_type": "G56_HEAT_OVEN",
         "gas_consumption_digits": 8,
         "energy_data_keys": [
             "gasUsed",
@@ -21,25 +18,18 @@
             "3": "0103DB446CDB006E4818C680017F80017F"
         }
     },
-    "requests": {
-        "get_schedule": {
-            "url": "/api/v1/device/getSchedule",
-            "method": "GET",
-            "params": {
-                "mac": "{mac}",
-                "type": "{heat_type}"
-            }
-        },
-        "save_schedule": {
-            "url": "/api/v1/device/saveSchedule",
-            "method": "POST",
-            "data": {
-                "byteStr": "{data}",
-                "mac": "{mac}",
-                "type": "{heat_type}"
-            }
-        }
+    "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 5
     },
+    "supported_requests": [
+        "get_schedule",
+        "save_schedule"
+    ],
     "processors": {
         "hotWaterTempSetting": [
             "hex_to_int"
@@ -103,22 +93,28 @@
     "entities": {
         "water_heater": [
             {
-                "name": "Water Heater",
+                "name": "热水器",
                 "key": "main",
                 "min_temp": 35,
                 "max_temp": 65,
                 "step": 1,
                 "command_topic": "hotWaterTempSetting",
-                "state_attribute": "hot_water_temp"
+                "state_attribute": "hot_water_temp",
+                "operation_mode": "Hot Water"
             }
         ],
         "climate": [
             {
-                "name": "Heating",
+                "name": "采暖",
                 "key": "main",
                 "min_temp": 35,
                 "max_temp": 85,
                 "step": 1,
+                "defaults": {
+                    "off_mode": "standby",
+                    "on_mode": "normal",
+                    "action_attribute": "burning_state"
+                },
                 "modes": {
                     "standby": {
                         "label": "Heating Off",
@@ -355,7 +351,7 @@
         "sensor": [
             {
                 "key": "hot_water_temp",
-                "name": "Hot Water Temperature",
+                "name": "生活热水设定温度",
                 "device_class": "temperature",
                 "state_class": "measurement",
                 "unit_of_measurement": "°C",
@@ -363,7 +359,7 @@
             },
             {
                 "key": "heating_temp_nm",
-                "name": "Heating Temperature (Normal Mode)",
+                "name": "采暖设定温度 (普通模式)",
                 "device_class": "temperature",
                 "state_class": "measurement",
                 "unit_of_measurement": "°C",
@@ -371,7 +367,7 @@
             },
             {
                 "key": "heating_temp_hes",
-                "name": "Heating Temperature (Energy Saving)",
+                "name": "采暖设定温度 (节能模式)",
                 "device_class": "temperature",
                 "state_class": "measurement",
                 "unit_of_measurement": "°C",
@@ -379,7 +375,7 @@
             },
             {
                 "key": "burning_state",
-                "name": "Burning State",
+                "name": "燃烧状态",
                 "entity_category": "diagnostic",
                 "state_attribute": "burning_state",
                 "value_map": {
@@ -391,7 +387,7 @@
             },
             {
                 "key": "gas_usage",
-                "name": "Gas Usage",
+                "name": "当前燃气用量",
                 "device_class": "gas",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "m³",
@@ -400,7 +396,7 @@
             },
             {
                 "key": "supply_time",
-                "name": "Supply Time",
+                "name": "实际使用时间",
                 "device_class": "duration",
                 "unit_of_measurement": "d",
                 "entity_category": "diagnostic",
@@ -416,7 +412,7 @@
             },
             {
                 "key": "total_power_supply_time",
-                "name": "Total Power Supply Time",
+                "name": "累计通电时间",
                 "device_class": "duration",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "d",
@@ -433,7 +429,7 @@
             },
             {
                 "key": "total_heating_burning_time",
-                "name": "Total Heating Burning Time",
+                "name": "采暖累计燃烧时间",
                 "device_class": "duration",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "h",
@@ -442,7 +438,7 @@
             },
             {
                 "key": "total_hot_water_burning_time",
-                "name": "Total Hot Water Burning Time",
+                "name": "热水累计燃烧时间",
                 "device_class": "duration",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "h",
@@ -451,7 +447,7 @@
             },
             {
                 "key": "heating_burning_times",
-                "name": "Heating Burning Times",
+                "name": "采暖点火次数",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "次",
                 "entity_category": "diagnostic",
@@ -467,7 +463,7 @@
             },
             {
                 "key": "hot_water_burning_times",
-                "name": "Hot Water Burning Times",
+                "name": "热水点火次数",
                 "state_class": "total_increasing",
                 "unit_of_measurement": "次",
                 "entity_category": "diagnostic",
@@ -483,21 +479,23 @@
             },
             {
                 "key": "heating_reservation",
-                "name": "Heating Reservation",
-                "type": "reservation_sensor"
+                "name": "采暖预约状态",
+                "type": "reservation_sensor",
+                "state_attribute": "byte_str"
             }
         ],
         "switch": [
             {
                 "key": "heating_reservation",
-                "name": "Heating Reservation",
-                "type": "reservation_switch"
+                "name": "采暖预约开关",
+                "type": "reservation_switch",
+                "state_attribute": "byte_str"
             }
         ],
         "select": [
             {
                 "key": "reservation_mode",
-                "name": "Reservation Mode",
+                "name": "预约模式选择",
                 "options": [
                     "Mode 1",
                     "Mode 2",
@@ -505,21 +503,24 @@
                     "Mode 4",
                     "Mode 5"
                 ],
-                "command_type": "schedule_mode"
+                "command_type": "schedule_mode",
+                "state_attribute": "byte_str"
             }
         ],
         "text": [
             {
                 "key": "schedule_mode_4",
-                "name": "Schedule Mode 4",
+                "name": "自定义1 设置",
                 "mode_index": 4,
-                "command_type": "schedule_data"
+                "command_type": "schedule_data",
+                "state_attribute": "byte_str"
             },
             {
                 "key": "schedule_mode_5",
-                "name": "Schedule Mode 5",
+                "name": "自定义2 设置",
                 "mode_index": 5,
-                "command_type": "schedule_data"
+                "command_type": "schedule_data",
+                "state_attribute": "byte_str"
             }
         ]
     }

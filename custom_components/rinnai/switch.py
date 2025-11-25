@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
+from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +46,29 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
         """Initialize the switch."""
         super().__init__(coordinator, device_id, config)
         self._attr_translation_key = "heating_reservation"
+        self._state_attribute = config["state_attribute"]
+        
+        # Initialize schedule manager
+        schedule_config = self._device.config.features.get("schedule_config", {})
+        # Fallback to device root config if not in features (support both placements)
+        if not schedule_config and hasattr(self._device.config, "schedule_config"):
+            pass
+            
+        # Ensure schedule_config is available
+
+        
         self._update_attributes()
+
+    @property
+    def schedule_manager(self) -> RinnaiScheduleManager | None:
+        """Get schedule manager instance."""
+        # Lazy load or create
+        if not hasattr(self, "_schedule_manager"):
+            if hasattr(self._device.config, "schedule_config"):
+                self._schedule_manager = RinnaiScheduleManager(self._device.config.schedule_config)
+            else:
+                self._schedule_manager = None
+        return self._schedule_manager
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -53,18 +76,11 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
         self.async_write_ha_state()
 
     def _update_attributes(self) -> None:
-        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
-        
-        if not raw_hex or len(raw_hex) < 2:
-            self._attr_is_on = None
+        if not self.schedule_manager:
             return
 
-        try:
-            # Byte 0 is status (00=Off, 01=On)
-            status_byte = int(raw_hex[0:2], 16)
-            self._attr_is_on = (status_byte == 1)
-        except ValueError:
-            self._attr_is_on = None
+        raw_hex = self.get_state_value(self._state_attribute)
+        self._attr_is_on = self.schedule_manager.parse_status(raw_hex)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -75,25 +91,20 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
         await self._set_reservation_state(False)
 
     async def _set_reservation_state(self, is_on: bool) -> None:
-        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
-        
-        if not raw_hex or len(raw_hex) < 34:
-            _LOGGER.warning("Cannot set reservation state: schedule data not available")
+        if not self.schedule_manager:
             return
 
-        # Construct new hex
-        # Byte 0 is at index 0-2
-        new_status_hex = "01" if is_on else "00"
-        new_full_hex = new_status_hex + raw_hex[2:]
+        raw_hex = self.get_state_value(self._state_attribute)
+        new_hex = self.schedule_manager.update_status(raw_hex, is_on)
         
+        if not new_hex:
+            _LOGGER.warning("Cannot set reservation state: invalid hex or config")
+            return
+            
         _LOGGER.debug("Setting reservation state to %s", "On" if is_on else "Off")
         
-        # Use HTTP method to save schedule
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_full_hex):
-            # Refresh schedule info to confirm change
+        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
             await self.coordinator.async_refresh_schedule(self._device_id)
-            
-            # Optimistic update
             self._attr_is_on = is_on
             self.async_write_ha_state()
         else:

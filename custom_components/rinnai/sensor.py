@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import UnitOfTemperature, UnitOfTime, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -19,7 +19,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
-from .core.util import decode_schedule_bitmap, format_schedule_string
+from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ async def async_setup_entry(
         if not device or not device.config:
             continue
             
-        # Generic sensors from config
         if sensor_configs := device.config.entities.get("sensor"):
             for config in sensor_configs:
                 sensor_type = config.get("type", "generic")
@@ -61,14 +60,13 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, device_id, config)
         
-        # Set up entity description based on config
         description = SensorEntityDescription(
-            key=config.get("key"),
-            name=config.get("name"),
+            key=config["key"],
+            name=config["name"],
             device_class=config.get("device_class"),
             state_class=config.get("state_class"),
             native_unit_of_measurement=config.get("unit_of_measurement"),
-            entity_category=config.get("entity_category"),
+            entity_category=EntityCategory(config["entity_category"]) if config.get("entity_category") else None,
         )
         self.entity_description = description
         self._value_map = config.get("value_map")
@@ -109,7 +107,6 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         else:
             current_value = raw_value
             
-        # Handle cumulative stats restoration
         is_cumulative = self.entity_description.state_class == SensorStateClass.TOTAL_INCREASING
         if (current_value is None or (is_cumulative and current_value == 0)) and self._restored_native_value is not None:
              self._attr_native_value = self._restored_native_value
@@ -124,6 +121,17 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, device_id, config)
         self._attr_translation_key = "heating_reservation"
+        self._state_attribute = config["state_attribute"]
+
+    @property
+    def schedule_manager(self) -> RinnaiScheduleManager | None:
+        """Get schedule manager instance."""
+        if not hasattr(self, "_schedule_manager"):
+            if hasattr(self._device.config, "schedule_config"):
+                self._schedule_manager = RinnaiScheduleManager(self._device.config.schedule_config)
+            else:
+                self._schedule_manager = None
+        return self._schedule_manager
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -131,37 +139,32 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
         self.async_write_ha_state()
 
     def _update_attributes(self) -> None:
-        # Use generic get_state_value to get byteStr or heatingReservationMode
-        # The key "byte_str" or "reservation_mode" should be mapped in config
-        raw_hex = self.get_state_value("byte_str") or self.get_state_value("reservation_mode")
+        if not self.schedule_manager:
+            return
+
+        raw_hex = self.get_state_value(self._state_attribute)
         
-        if not raw_hex or len(raw_hex) < 34:
+        if not self.schedule_manager.validate_hex(raw_hex):
             self._attr_native_value = "Unknown"
             return
 
-        try:
-            status_byte = int(raw_hex[0:2], 16)
-            mode_index = int(raw_hex[2:4], 16)
-            
-            self._attr_native_value = "On" if status_byte == 1 else "Off"
-            
-            attrs = {
-                "current_mode_index": mode_index,
-                "raw_hex": raw_hex
-            }
-            
-            # Parse 5 modes
-            for i in range(5):
-                start_idx = 4 + (i * 6)
-                mode_hex = raw_hex[start_idx : start_idx + 6]
-                active_hours = decode_schedule_bitmap(mode_hex)
-                schedule_str = format_schedule_string(active_hours)
-                attrs[f"mode_{i+1}_schedule"] = schedule_str
-                
-                if (i + 1) == mode_index:
+        is_on = self.schedule_manager.parse_status(raw_hex)
+        mode_index = self.schedule_manager.parse_mode_index(raw_hex)
+        
+        self._attr_native_value = "On" if is_on else "Off"
+        
+        attrs = {
+            "current_mode_index": mode_index,
+            "raw_hex": raw_hex
+        }
+        
+        # Parse modes using manager
+        for i in range(self.schedule_manager.mode_count):
+            idx = i + 1
+            schedule_str = self.schedule_manager.parse_schedule(raw_hex, idx)
+            if schedule_str:
+                attrs[f"mode_{idx}_schedule"] = schedule_str
+                if idx == mode_index:
                     attrs["current_schedule"] = schedule_str
-            
-            self._attr_extra_state_attributes = attrs
-            
-        except ValueError:
-            self._attr_native_value = "Error"
+        
+        self._attr_extra_state_attributes = attrs

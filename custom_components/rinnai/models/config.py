@@ -8,7 +8,6 @@ from typing import Any
 class RinnaiDeviceConfig:
     """Rinnai device configuration."""
     name: str
-    supported_models: list[str]
     
     # Generic configuration fields
     entities: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -17,17 +16,20 @@ class RinnaiDeviceConfig:
     features: dict[str, Any] = field(default_factory=dict)
     
     # API Requests configuration
-    requests: dict[str, dict[str, Any]] = field(default_factory=dict)
+    supported_requests: list[str] = field(default_factory=list)
+    
+    # Schedule configuration
+    schedule_config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RinnaiDeviceConfig:
         """Create config from dictionary."""
         return cls(
             name=data.get("name", "Unknown"),
-            supported_models=data.get("supported_models", []),
             entities=data.get("entities", {}),
             state_mapping=data.get("state_mapping", {}),
             processors=data.get("processors", {}),
             features=data.get("features", {}),
-            requests=data.get("requests", {})
+            supported_requests=data.get("supported_requests", []),
+            schedule_config=data.get("schedule_config", {})
         )

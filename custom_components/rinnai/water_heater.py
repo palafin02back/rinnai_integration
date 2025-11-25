@@ -51,15 +51,18 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         self._attr_supported_features = WaterHeaterEntityFeature.TARGET_TEMPERATURE
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        self._attr_min_temp = config.get("min_temp", 35)
-        self._attr_max_temp = config.get("max_temp", 65)
-        self._attr_target_temperature_step = config.get("step", 1)
+        # Mandatory configuration - no defaults
+        self._attr_min_temp = config["min_temp"]
+        self._attr_max_temp = config["max_temp"]
+        self._attr_target_temperature_step = config["step"]
         
-        self._command_topic = config.get("command_topic", "hotWaterTempSetting")
-        self._state_attribute = config.get("state_attribute", "hot_water_temp")
-
-        self._attr_operation_list = []
-        self._attr_current_operation = "Hot Water"
+        self._command_topic = config["command_topic"]
+        self._state_attribute = config["state_attribute"]
+        
+        # Operation mode name from config, default to "Hot Water" if not specified (display only)
+        operation_mode = config.get("operation_mode", "Hot Water")
+        self._attr_operation_list = [operation_mode]
+        self._attr_current_operation = operation_mode
 
         self._update_attributes()
 

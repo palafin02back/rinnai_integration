@@ -54,7 +54,6 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             if saved_data := await self._store.async_load():
                 for device_id, energy_data in saved_data.items():
                     if device := self._devices.get(device_id):
-                        # Update raw data directly since we don't have specific properties anymore
                         device.state.raw_data.update(energy_data)
                         _LOGGER.debug("Loaded saved energy data for device %s", device_id)
         except (ValueError, TypeError, KeyError) as err:
@@ -73,14 +72,10 @@ class RinnaiCoordinator(DataUpdateCoordinator):
                 device_energy = {}
                 
                 for key in energy_keys:
-                    # Try to find the key in raw data
-                    # We might need to map it if it's different in storage vs API
-                    # But for simplicity, let's assume we store what's in raw_data (processed)
                     if key in device.state.raw_data:
                         device_energy[key] = device.state.raw_data[key]
                 
-                # Also save gas usage if not in keys list but present
-                # (Legacy support or specific handling)
+                # Legacy support: save gasConsumption if present
                 if "gasConsumption" in device.state.raw_data:
                     device_energy["gasConsumption"] = device.state.raw_data["gasConsumption"]
 
@@ -198,16 +193,7 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             self.async_set_updated_data(self.data)
             self.data["device_states"][device_id] = self._devices[device_id].state
 
-            device = self._devices[device_id]
-            _LOGGER.info("===== Command Post-State =====")
-            _LOGGER.info("Device: %s (%s)", device.device_name, device_id)
-            _LOGGER.debug("State Manager Remote State: %s", device.state_manager.raw_remote_state)
-            
-            # Log changed keys
-            for cmd_key, cmd_value in command.items():
-                current_value = device.state.raw_data.get(cmd_key, "Not Set")
-                _LOGGER.info("  %s: %s -> %s", cmd_key, cmd_value, current_value)
-            _LOGGER.info("======================")
+            _LOGGER.debug("Command sent successfully to %s: %s", device_id, command)
         else:
             _LOGGER.warning("Command Send Failed: %s", command)
 
@@ -234,23 +220,4 @@ class RinnaiCoordinator(DataUpdateCoordinator):
     def _log_device_states(self) -> None:
         """Log detailed state information for all devices."""
         for device_id, device in self._devices.items():
-            state = device.state
-            config = device.config
-            
-            _LOGGER.info("===== Device Status Sync =====")
-            _LOGGER.info("Device: %s (%s), Online: %s", device.device_name, device_id, device.online)
-            _LOGGER.info("Type: %s, Auth Code: %s", device.device_type, device.auth_code)
-
-            if not config:
-                _LOGGER.info("No configuration loaded for device")
-                continue
-
-            # Log mapped states
-            _LOGGER.info("Mapped States:")
-            for internal_key, api_key in config.state_mapping.items():
-                val = get_state_value(state, internal_key, config.state_mapping)
-                _LOGGER.info("  %s (%s): %s", internal_key, api_key, val)
-
-            _LOGGER.debug("Device Raw Data: %s", device.raw_data)
-            _LOGGER.debug("State Raw Data: %s", state.raw_data)
-            _LOGGER.info("===========================")
+            _LOGGER.debug("Device %s (%s) - Online: %s", device.device_name, device_id, device.online)

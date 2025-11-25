@@ -31,14 +31,14 @@
             "gas_usage": {
                 "name": "当前燃气用量"
             },
-            "heating_temperature_hes": {
-                "name": "采暖设定温度 (节能模式)"
+            "hot_water_temp": {
+                "name": "生活热水设定温度"
             },
-            "heating_temperature_nm": {
+            "heating_temp_nm": {
                 "name": "采暖设定温度 (普通模式)"
             },
-            "hot_water_temperature": {
-                "name": "生活热水设定温度"
+            "heating_temp_hes": {
+                "name": "采暖设定温度 (节能模式)"
             },
             "operation_mode": {
                 "name": "运行模式"
@@ -66,7 +66,7 @@
             }
         },
         "climate": {
-            "rinnai": {
+            "main": {
                 "name": "采暖控制",
                 "state": {
                     "heat": "采暖",
@@ -92,18 +92,6 @@
             }
         },
         "switch": {
-            "energy_saving_mode": {
-                "name": "节能模式状态"
-            },
-            "outdoor_mode": {
-                "name": "外出模式状态"
-            },
-            "rapid_heating": {
-                "name": "快速采暖状态"
-            },
-            "summer_winter": {
-                "name": "冬夏模式"
-            },
             "heating_reservation": {
                 "name": "采暖预约开关"
             }
@@ -129,7 +117,7 @@
             }
         },
         "water_heater": {
-            "rinnai": {
+            "main": {
                 "name": "热水器",
                 "state": {
                     "Hot Water": "热水"

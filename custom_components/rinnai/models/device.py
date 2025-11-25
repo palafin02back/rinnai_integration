@@ -60,13 +60,7 @@ class RinnaiDevice:
     state_manager: RinnaiStateManager = field(default_factory=RinnaiStateManager)
     
     # Device Configuration
-    config: RinnaiDeviceConfig = field(init=False)
-
-    def __post_init__(self):
-        """Initialize configuration."""
-        # Load configuration based on device type
-        self.config = config_manager.get_config(self.device_type)
-        self.state.config = self.config
+    config: RinnaiDeviceConfig | None = None
 
     def update_from_api_data(self, api_data: dict[str, Any]) -> None:
         """Update device from API data."""
@@ -75,7 +69,14 @@ class RinnaiDevice:
 
         # Update basic device properties
         self.device_name = api_data.get("name", self.device_name)
-        self.device_type = api_data.get("deviceType", self.device_type)
+        
+        new_device_type = api_data.get("deviceType", self.device_type)
+        if new_device_type != self.device_type:
+            self.device_type = new_device_type
+            # Reload config if device type changed
+            self.config = config_manager.get_config(self.device_type)
+            self.state.config = self.config
+            
         self.auth_code = api_data.get("authCode", self.auth_code)
 
         # Update online status
