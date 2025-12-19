@@ -430,8 +430,6 @@ class RinnaiClient:
             return False
 
         device_data = self.devices[device_id]
-        # Default to reservation code if not present, though usually authCode is in device data
-        from ..const import MQTT_DEFINITIONS
         proto = MQTT_DEFINITIONS["protocol"]
         
         auth_code = device_data.get("authCode", proto["reservation_code"])

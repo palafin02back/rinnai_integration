@@ -12,7 +12,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
-from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,28 +46,7 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
         super().__init__(coordinator, device_id, config)
         self._attr_translation_key = "heating_reservation"
         self._state_attribute = config["state_attribute"]
-        
-        # Initialize schedule manager
-        schedule_config = self._device.config.features.get("schedule_config", {})
-        # Fallback to device root config if not in features (support both placements)
-        if not schedule_config and hasattr(self._device.config, "schedule_config"):
-            pass
-            
-        # Ensure schedule_config is available
-
-        
         self._update_attributes()
-
-    @property
-    def schedule_manager(self) -> RinnaiScheduleManager | None:
-        """Get schedule manager instance."""
-        # Lazy load or create
-        if not hasattr(self, "_schedule_manager"):
-            if hasattr(self._device.config, "schedule_config"):
-                self._schedule_manager = RinnaiScheduleManager(self._device.config.schedule_config)
-            else:
-                self._schedule_manager = None
-        return self._schedule_manager
 
     @callback
     def _handle_coordinator_update(self) -> None:

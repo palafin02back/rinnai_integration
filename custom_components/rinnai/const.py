@@ -12,7 +12,6 @@ CONF_UPDATE_INTERVAL: Final = "update_interval"
 CONF_CONNECT_TIMEOUT: Final = "connect_timeout"
 
 # Attributes and service names
-# Attributes and service names
 # These are now defined in device configuration JSON files
 
 # Supported platforms

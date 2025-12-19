@@ -12,7 +12,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
-from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,16 +47,6 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         self._state_attribute = config.get("state_attribute")
         self._attr_native_value = "Unknown"
         self._update_attributes()
-
-    @property
-    def schedule_manager(self) -> RinnaiScheduleManager | None:
-        """Get schedule manager instance."""
-        if not hasattr(self, "_schedule_manager"):
-            if hasattr(self._device.config, "schedule_config"):
-                self._schedule_manager = RinnaiScheduleManager(self._device.config.schedule_config)
-            else:
-                self._schedule_manager = None
-        return self._schedule_manager
 
     @callback
     def _handle_coordinator_update(self) -> None:

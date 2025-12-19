@@ -44,11 +44,10 @@ class RinnaiMQTTClient:
         )
 
         _LOGGER.debug(
-            "MQTT client initialized with host=%s, port=%s, username=%s, password=%s, client_id=%s",
+            "MQTT client initialized with host=%s, port=%s, username=%s, client_id=%s",
             RINNAI_HOST,
             RINNAI_PORT,
             self.username,
-            self.password,
             self.client_id,
         )
 
@@ -115,7 +114,7 @@ class RinnaiMQTTClient:
                     if i == 9 and not self.connected:
                         _LOGGER.warning("MQTT connection timeout after 5 seconds")
 
-            except (ValueError, TypeError, KeyError) as err:
+            except Exception as err:
                 _LOGGER.error("Error connecting to Rinnai MQTT broker: %s", err)
                 return False
             return self.connected
@@ -141,7 +140,7 @@ class RinnaiMQTTClient:
                 self.client.publish, topic, payload, qos
             )
 
-        except (ValueError, TypeError, KeyError) as err:
+        except Exception as err:
             _LOGGER.error("Error publishing to Rinnai MQTT broker: %s", err)
             return False
         return result.rc == mqtt.MQTT_ERR_SUCCESS
@@ -160,7 +159,7 @@ class RinnaiMQTTClient:
 
         try:
             await self.hass.async_add_executor_job(self.client.subscribe, topic, qos)
-        except (ValueError, TypeError, KeyError) as err:
+        except Exception as err:
             _LOGGER.error("Error subscribing to topic %s: %s", topic, err)
             return lambda: None
 
@@ -179,5 +178,5 @@ class RinnaiMQTTClient:
         if self.connected:
             try:
                 self.client.unsubscribe(topic)
-            except (ValueError, TypeError, KeyError) as err:
+            except Exception as err:
                 _LOGGER.error("Error unsubscribing from topic %s: %s", topic, err)
