@@ -10,6 +10,7 @@ from homeassistant.helpers.entity import Entity
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .core.entity_utils import get_state_value
+from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class RinnaiEntity(CoordinatorEntity, Entity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._entity_config = entity_config
+        self._schedule_manager: RinnaiScheduleManager | None = None
         
         device = self._device
         if device:
@@ -67,6 +69,15 @@ class RinnaiEntity(CoordinatorEntity, Entity):
             return False
         return super().available
 
+    @property
+    def schedule_manager(self) -> RinnaiScheduleManager | None:
+        """Get schedule manager instance (lazy loading)."""
+        if self._schedule_manager is None:
+            device = self._device
+            if device and device.config and hasattr(device.config, "schedule_config"):
+                self._schedule_manager = RinnaiScheduleManager(device.config.schedule_config)
+        return self._schedule_manager
+
     def get_state_value(self, key: str) -> Any:
         """Get a value from the device state using the configured mapping."""
         device = self._device
@@ -78,3 +89,4 @@ class RinnaiEntity(CoordinatorEntity, Entity):
             key, 
             device.config.state_mapping
         )
+

@@ -19,7 +19,6 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
-from .core.schedule_manager import RinnaiScheduleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,16 +121,6 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
         super().__init__(coordinator, device_id, config)
         self._attr_translation_key = "heating_reservation"
         self._state_attribute = config["state_attribute"]
-
-    @property
-    def schedule_manager(self) -> RinnaiScheduleManager | None:
-        """Get schedule manager instance."""
-        if not hasattr(self, "_schedule_manager"):
-            if hasattr(self._device.config, "schedule_config"):
-                self._schedule_manager = RinnaiScheduleManager(self._device.config.schedule_config)
-            else:
-                self._schedule_manager = None
-        return self._schedule_manager
 
     @callback
     def _handle_coordinator_update(self) -> None:
