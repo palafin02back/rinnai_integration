@@ -23,3 +23,10 @@ htmlcov/
 .storage/
 config/
 docker-compose.yml
+
+# Local development only
+claude.local.md
+docker/
+docs/
+*.apk
+apk_decompiled*/
