@@ -376,16 +376,16 @@ class RinnaiClient:
                 try:
                     payload = json.loads(msg.payload)
                     
-                    if (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["info_code"]):
-                        state_data = self._process_device_info(payload)
+                    if topic_type == "inf" and payload.get("enl"):
+                        if payload.get("code") == proto["reservation_code"]:
+                            state_data = self._process_reservation_info(payload)
+                        else:
+                            state_data = self._process_device_info(payload)
+                        
                         if state_data:
                             self._handle_state_update(device_id, state_data)
                     elif (topic_type == "stg" and payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]):
                         state_data = self._process_energy_data(payload, device_id)
-                        if state_data:
-                            self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["reservation_code"]):
-                        state_data = self._process_reservation_info(payload)
                         if state_data:
                             self._handle_state_update(device_id, state_data)
                             

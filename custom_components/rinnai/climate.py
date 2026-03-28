@@ -64,6 +64,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         self._modes_config = config["modes"]
         self._transitions = config["transitions"]
         self._mode_codes = config["mode_codes"]
+        self._mode_match = config.get("mode_match", "exact")
         self._temp_settings = config["temp_settings"]
         self._active_states = config["active_states"]
         
@@ -93,10 +94,19 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         self.async_write_ha_state()
 
     def _get_mode_from_code(self, code: str) -> str:
-        """Resolve mode key from operation mode code."""
+        """Resolve mode key from operation mode code.
+
+        Supports two matching strategies:
+        - 'exact': code must be in the codes list (G56 single-byte codes)
+        - 'prefix': code must start with one of the codes (Q85 3-byte codes)
+        """
         for mode_key, codes in self._mode_codes.items():
-            if code in codes:
-                return mode_key
+            if self._mode_match == "prefix":
+                if any(code.upper().startswith(c.upper()) for c in codes):
+                    return mode_key
+            else:
+                if code in codes:
+                    return mode_key
         return self._off_mode
 
     def _update_temperature_attributes(self) -> None:
@@ -219,8 +229,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         if await execute_transition(self.coordinator.client, self._device_id, steps):
             # Optimistic update
             self._current_mode = target_mode
-            self._update_attributes() # Re-evaluate attributes based on new mode
+            self._update_attributes()  # Re-evaluate attributes based on new mode
             self.async_write_ha_state()
-            
-            # Refresh data to confirm
-            await self.coordinator.async_request_refresh()
+            # MQTT inf/ response will confirm the state change naturally.
+

@@ -41,6 +41,8 @@ async def async_setup_entry(
                 sensor_type = config.get("type", "generic")
                 if sensor_type == "reservation_sensor":
                     entities.append(RinnaiHeatingReservationSensor(coordinator, device_id, config))
+                elif sensor_type == "circulation_sensor":
+                    entities.append(RinnaiCirculationSensor(coordinator, device_id, config))
                 else:
                     entities.append(RinnaiGenericSensor(coordinator, device_id, config))
 
@@ -157,3 +159,38 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
                     attrs["current_schedule"] = schedule_str
         
         self._attr_extra_state_attributes = attrs
+
+
+class RinnaiCirculationSensor(RinnaiEntity, SensorEntity):
+    """Sensor for Q85 one-key circulation status (derived from operationMode Byte3)."""
+
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
+        super().__init__(coordinator, device_id, config)
+        self._state_attribute = config["state_attribute"]
+        self._update_attributes()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    def _update_attributes(self) -> None:
+        raw_value = self.get_state_value(self._state_attribute)
+        if raw_value is None:
+            self._attr_native_value = "Unknown"
+            return
+
+        raw_str = str(raw_value)
+        # operationMode is 6 hex chars (3 bytes), Byte3 = last 2 chars
+        if len(raw_str) >= 6:
+            byte3 = raw_str[4:6].upper()
+            if byte3 == "0C":
+                self._attr_native_value = "Active"
+            else:
+                self._attr_native_value = "Inactive"
+        else:
+            self._attr_native_value = "Unknown"
+
+        self._attr_extra_state_attributes = {
+            "raw_operation_mode": raw_str,
+        }

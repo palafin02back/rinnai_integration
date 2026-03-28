@@ -188,12 +188,13 @@ class RinnaiCoordinator(DataUpdateCoordinator):
         """Send command to a device."""
         result = await self.client.send_command(device_id, command)
 
-        if result and device_id in self._devices:
-            self._devices[device_id].update_state(command, is_command=True)
-            self.async_set_updated_data(self.data)
-            self.data["device_states"][device_id] = self._devices[device_id].state
-
+        if result:
             _LOGGER.debug("Command sent successfully to %s: %s", device_id, command)
+            # DO NOT call update_state(is_command=True) here.
+            # The raw command values (e.g., hex "2A") would mismatch with
+            # processor-converted remote values (e.g., int 42), causing
+            # state_manager to hold stale desired_state for 10s.
+            # Let the MQTT inf/ response naturally update the state instead.
         else:
             _LOGGER.warning("Command Send Failed: %s", command)
 
