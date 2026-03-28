@@ -1,85 +1,148 @@
-# Rinnai采暖设备集成（HomeAssistant插件）
+# 林内 (Rinnai) Home Assistant 集成
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/release/palafin02back/rinnai_integration.svg)](https://github.com/palafin02back/rinnai_integration/releases)
 [![GitHub license](https://img.shields.io/github/license/palafin02back/rinnai_integration.svg)](https://github.com/palafin02back/rinnai_integration/blob/master/LICENSE)
 
-此集成可让你在 Home Assistant 中控制和监控 Rinnai（林内）G56 系列锅炉采暖设备。
+适用于 Home Assistant 的林内 (Rinnai) 采暖炉/热水器/热泵自定义集成组件。
 
 ---
 
 ## ⚠️ 重要风险警示
 
-**使用本集成存在被官方服务器封号的风险**。一旦被封号，可能导致在原厂 APP 内设备会一直显示离线，无法正常远程控制设备。  
+**使用本集成存在被官方服务器封号的风险**。一旦被封号，可能导致在原厂 APP 内设备会一直显示离线，无法正常远程控制设备。
 **请在充分知晓风险、自愿承担责任的前提下使用本插件。严格不建议在主账号下使用。开发者及本开源项目对由此带来的损失不承担任何责任。**
+
+---
+
+## 支持设备
+
+| 型号系列 | classID | 设备类型 |
+|---|---|---|
+| G56 采暖炉 | `0F06000C` | 壁挂炉（采暖+热水） |
+| G58 采暖炉 | `0F060016` | 壁挂炉（采暖+热水） |
+| G55 采暖炉 | `0F060G55` | 壁挂炉（采暖+热水） |
+| E86 热水器 | `02720E86` | 燃气热水器 |
+| E88 热水器 | `0272000E` | 燃气热水器 |
+| E89 热水器 | `02720022` | 燃气热水器（旗舰型） |
+| E65 热水器 | `02720010` | 燃气热水器（按摩水/浓薄水） |
+| E75 热水器 | `0272001C` | 燃气热水器（按摩水/浓薄水） |
+| E76 热水器 | `02720E76` | 燃气热水器 |
+| E66 热水器 | `02720E66` | 燃气热水器 |
+| E51 热水器 | `0272000D` | 燃气热水器（基础型） |
+| RTC-626 温控器 | `0F090004` | 室内温控器（采暖炉配套） |
+| 热泵温控器 | `0F090011` | 室内温控器（空气源热泵配套） |
+| 净水软水器 | `0F070006` | RWTS 系列净水软水器 |
+
+> 未在列表中的设备型号暂不支持。欢迎提交 Issue 补充。
 
 ---
 
 ## 功能特性
 
-- 控制采暖温度
-- 控制热水温度
-- 切换采暖模式（正常模式 / 节能模式 / 户外模式）
-- 查看设备状态及部分信息
-- 支持锅炉开/关机操作
-- 支持额外通过MQTT推送原始数据（数据含义未详尽）
+### 采暖炉（G55 / G56 / G58）
 
-## 安装方式
+- **Climate 实体**：采暖控制，支持 5 种模式：
+  - 待机（Standby）
+  - 普通采暖（Normal Heating）
+  - 节能采暖（Heating Energy Saving）
+  - 户外模式（Heating Outdoor）
+  - 快速采暖（Fast Heating）
+- **Water Heater 实体**：生活热水温度控制（35–65°C）
+- **传感器**：燃烧状态、燃气用量、采暖设定温度（普通/节能模式）
+- **预约管理**：开关、模式选择、自定义时间段（text 实体）
+- **能耗统计**：燃气用量、燃烧时长、点火次数
 
-### 方法一：HACS安装（推荐）
+### 热水器（E51 / E65 / E66 / E75 / E76 / E86 / E88 / E89）
 
-1. 确保已安装 [HACS](https://hacs.xyz/)
-2. 在 HACS 页面点击「自定义存储库」
-3. 添加存储库 URL：`https://github.com/palafin02back/rinnai_integration`
-4. 类别选择「集成」
-5. 点击「添加」
-6. 在 HACS 集成页面搜索「Rinnai」并安装
+- **Water Heater 实体**：热水温度控制
+- **传感器**：燃烧状态、燃气用量、热水设定温度
+- **开关**：按摩水模式（E65/E75/E86/E88/E89）、循环保温（E86/E88/E89）
+- **运行模式选择**：正常/冬季节能/自动/浓薄水
+- **预约管理**：开关、模式选择、自定义时间段
 
-### 方法二：手动安装
+### 热泵温控器（0F090011）
 
-1. 下载本仓库源码
-2. 将 `custom_components/rinnai` 文件夹复制到 HomeAssistant 配置目录下的 `custom_components` 文件夹中
-3. 重启 HomeAssistant
+- **开关**：热泵主机开关
+- **模式选择**：制热 / 制冷
+- **温度设定（number 实体）**：室内温度、制冷设定温度、制热设定温度
+- **传感器**：室内温度、运行状态、连接状态
 
-## 配置方法
+### RTC-626 温控器（0F090004）
 
-支持通过 UI 图形界面配置：
+- **开关**：温控器开关
+- **温度设定（number 实体）**：室内温度设定（5–35°C）
+- **传感器**：室内实测温度、温度设定、故障码
 
-1. 进入 HomeAssistant 配置 → 集成 → 添加集成
-2. 搜索「Rinnai」
-3. 按照页面向导完成配置参数填写
+### 净水软水器（0F070006）
 
-## 支持设备列表
+- **开关**：立即再生
+- **传感器**：工作状态、盐量、水硬度、再生次数、盐量低报警、出水流量、故障码
 
-- 主要支持林内采暖设备（G56系列）
-- 其他系列暂未适配支持
-- 已在 HomeAssistant `2025.2.0` 版本测试（其他版本请自行验证兼容性）
+---
 
-## 效果展示
+## 安装
 
-- 温度控制界面示例  
-  ![image](https://github.com/user-attachments/assets/64e9123e-0d23-42cf-8090-7f3f962a2086)  
-  ![image](https://github.com/user-attachments/assets/5fa8d68a-017d-4def-9f90-961a55ab107a)  
-  ![image](https://github.com/user-attachments/assets/12931304-33d3-42f3-b6a9-69cb367b50aa)
+### HACS（推荐）
 
-- MQTT 原始数据展示（原始数据仅供参考，具体意义未解析）
+1. 打开 Home Assistant 中的 [HACS](https://hacs.xyz/)。
+2. 进入 **Integrations** > **Custom repositories**。
+3. 添加本仓库地址 `https://github.com/palafin02back/rinnai_integration`，类别选 **Integration**。
+4. 搜索 "Rinnai" 并安装。
+5. 重启 Home Assistant。
 
-## 常见问题与故障排查
+### 手动安装
 
-如遇问题，请逐项检查：
+1. 将 `custom_components/rinnai` 目录复制到 HA 配置目录下的 `custom_components/`。
+2. 重启 Home Assistant。
 
-1. 设备是否已正确联网
-2. 可否通过原厂 APP 正常控制
-3. 查看 HomeAssistant 日志，检查是否有相关报错
-4. 若无法解决，请开启调试日志，并在 issues 区提交问题时附带完整 HomeAssistant 版本及错误日志
+---
+
+## 配置
+
+1. 进入 **配置** > **设备与服务**。
+2. 点击 **添加集成**，搜索 **Rinnai**。
+3. 输入林内智家 App 的用户名和密码。
+
+> 建议使用子账号，不要使用绑定设备的主账号，降低封号影响。
+
+---
+
+## 使用说明
+
+### 预约自定义（采暖炉 / E系列热水器）
+
+1. 在 `select.reservation_mode` 中选择 "自定义1" 或 "自定义2"。
+2. 在对应的 `text` 实体中输入时间区间，格式：`00:00-08:00,18:00-23:00`。
+
+### 温度设定（number 实体）
+
+温控器和热泵配套温控器支持直接在 HA 中滑动设定目标温度，无需打开 APP。
+
+---
+
+## 故障排除
+
+| 现象 | 可能原因 |
+|---|---|
+| 集成添加后无实体 | 设备型号不在支持列表，查看 HA 日志确认 `deviceType` |
+| 实体状态 `unavailable` | 设备在林内 App 中离线，或 MQTT 连接失败 |
+| 温度设定后立即还原 | 正常现象（乐观状态 10 秒内），等待设备回包确认 |
+| MQTT 断连后不自动恢复 | 版本过旧，请更新到最新版本（已内置指数退避自动重连） |
+
+---
 
 ## 贡献与支持
 
-欢迎提交 Issue 或 PR 反馈问题与建议，协助本集成完善。
+欢迎提交 Issue 或 PR。如需适配新设备，请附上设备 `classID`（在林内 App 设备详情页面或 HA 日志中可查到）。
+
+---
 
 ## 免责声明
 
 本项目为非官方的爱好者开发项目，不受 Rinnai 官方支持或认证，仅限爱好者研究用途。由此带来封号、设备异常、数据丢失等风险由用户个人承担，开发者及维护者不对此承担任何责任。强烈建议慎重使用！
+
+---
 
 ## 许可证
 

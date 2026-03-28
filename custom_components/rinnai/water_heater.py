@@ -1,5 +1,4 @@
 """Support for Rinnai water heater."""
-
 from __future__ import annotations
 
 import logging
@@ -13,10 +12,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MAX_TEMP, MIN_TEMP, TEMP_STEP
+from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,49 +28,46 @@ async def async_setup_entry(
     """Set up Rinnai water heater based on a config entry."""
     coordinator: RinnaiCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities = [
-        RinnaiWaterHeaterEntity(coordinator, device_id)
-        for device_id in coordinator.data["devices"]
-    ]
+    entities = []
+    for device_id in coordinator.data["devices"]:
+        device = coordinator.get_device(device_id)
+        if not device or not device.config:
+            continue
+            
+        if wh_configs := device.config.entities.get("water_heater"):
+            for config in wh_configs:
+                entities.append(RinnaiWaterHeaterEntity(coordinator, device_id, config))
 
     async_add_entities(entities)
 
 
-class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
+class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
     """Representation of a Rinnai water heater entity."""
 
-    coordinator: RinnaiCoordinator
-
-    def __init__(self, coordinator: RinnaiCoordinator, device_id: str) -> None:
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
         """Initialize the water heater entity."""
-        super().__init__(coordinator)
-        self._device_id = device_id
+        super().__init__(coordinator, device_id, config)
 
-        # Only supports temperature control
         self._attr_supported_features = WaterHeaterEntityFeature.TARGET_TEMPERATURE
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_min_temp = MIN_TEMP
-        self._attr_max_temp = MAX_TEMP
-        self._attr_target_temperature_step = TEMP_STEP
-
-        # No longer supports operation mode list, but needs to set default current operation mode
-        self._attr_operation_list = []
-        self._attr_current_operation = "Hot Water"
-
-        # Use has_entity_name flag to enable proper translation
-        self._attr_has_entity_name = True
+        
+        # Mandatory configuration - no defaults
+        self._attr_min_temp = config["min_temp"]
+        self._attr_max_temp = config["max_temp"]
+        self._attr_target_temperature_step = config["step"]
+        
+        self._command_topic = config["command_topic"]
+        self._state_attribute = config["state_attribute"]
+        # "hex2" → 2-char (G56 style: 40°C → "28")
+        # "hex4" → 4-char (E-series style: 40°C → "2800")
+        self._temp_format = config.get("temp_format", "hex2")
+        
+        # Operation mode name from config, default to "Hot Water" if not specified (display only)
+        operation_mode = config.get("operation_mode", "Hot Water")
+        self._attr_operation_list = [operation_mode]
+        self._attr_current_operation = operation_mode
 
         self._update_attributes()
-
-    @property
-    def _device(self):
-        """Get the device object."""
-        return self.coordinator.get_device(self._device_id)
-
-    @property
-    def _device_state(self):
-        """Get the device state object."""
-        return self.coordinator.get_device_state(self._device_id)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -84,52 +80,16 @@ class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
         device = self._device
         if not device:
             self._attr_available = False
-            _LOGGER.debug("Water heater device not available")
             return
-        self._attr_unique_id = f"{self._device_id}_water_heater"
-        self._attr_translation_key = "rinnai"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, self._device_id)},
-            "name": device.device_name,
-            "manufacturer": "Rinnai",
-            "model": device.device_type,
-        }
+            
         self._attr_available = device.online
 
-        if not device.online:
-            _LOGGER.debug("Water heater device offline")
-            return
-
-        # Update state attributes
-        state = self._device_state
-        if not state:
-            _LOGGER.debug("Water heater state not available")
-            return
-
-        # Only get hot water temperature setting
+        # Update temperature
         try:
-            self._attr_target_temperature = state.hot_water_temp
-            _LOGGER.debug(
-                "Water heater target temperature: %s°C", self._attr_target_temperature
-            )
-        except (ValueError, TypeError) as e:
+            self._attr_target_temperature = self.get_state_value(self._state_attribute)
+        except (ValueError, TypeError):
             self._attr_target_temperature = 0
-            _LOGGER.debug("Error getting water heater temperature: %s", e)
-
-        # Set fixed operation mode name
-        self._attr_current_operation = "Hot Water"
-        _LOGGER.debug(
-            "Water heater operation mode set to: %s", self._attr_current_operation
-        )
-
-        # Log complete device information to help debugging
-        _LOGGER.debug(
-            "Water heater complete info - Name: %s, Model: %s, Online: %s, Temp: %s°C",
-            device.device_name,
-            device.device_type,
-            device.online,
-            self._attr_target_temperature,
-        )
+        self._attr_current_temperature = self._attr_target_temperature
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -139,23 +99,15 @@ class RinnaiWaterHeaterEntity(CoordinatorEntity, WaterHeaterEntity):
 
         temperature = int(temperature)
         if temperature < self.min_temp or temperature > self.max_temp:
-            _LOGGER.warning(
-                "Temperature %s out of range (min: %s, max: %s)",
-                temperature,
-                self.min_temp,
-                self.max_temp,
-            )
             return
 
-        # Set hot water temperature
-        hex_temperature = hex(temperature)[2:].upper()
-        command = {"hotWaterTempSetting": hex_temperature}
-        _LOGGER.debug("Setting hot water temperature to %s°C", temperature)
+        hex_temperature = hex(temperature)[2:].upper().zfill(2)
+        if self._temp_format == "hex4":
+            hex_temperature = hex_temperature + "00"
+        command = {self._command_topic: hex_temperature}
 
-        # Send command and update status
         success = await self.coordinator.async_send_command(self._device_id, command)
 
         if success:
-            # Update local state immediately
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()

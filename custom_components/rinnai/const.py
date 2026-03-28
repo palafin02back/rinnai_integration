@@ -10,30 +10,13 @@ CONF_USERNAME: Final = "username"
 CONF_PASSWORD: Final = "password"
 CONF_UPDATE_INTERVAL: Final = "update_interval"
 CONF_CONNECT_TIMEOUT: Final = "connect_timeout"
-
-# Data processing configuration
-GAS_CONSUMPTION_MAX_DIGITS: Final = 8  # Use last 8 digits of gas consumption hex value
+CONF_EXPERIMENTAL_SENSORS: Final = "experimental_sensors"
 
 # Attributes and service names
-ATTR_HOT_WATER_TEMP: Final = "hot_water_temperature"
-ATTR_HEATING_TEMP_NM: Final = "heating_temperature_nm"
-ATTR_HEATING_TEMP_HES: Final = "heating_temperature_hes"
-ATTR_ENERGY_SAVING_MODE: Final = "energy_saving_mode"
-ATTR_OUTDOOR_MODE: Final = "outdoor_mode"
-ATTR_RAPID_HEATING: Final = "rapid_heating"
-ATTR_SUMMER_WINTER: Final = "summer_winter"
-ATTR_GAS_USAGE: Final = "gas_usage"
-ATTR_SUPPLY_TIME: Final = "supply_time"
-ATTR_BURNING_STATE: Final = "burning_state"
-# 新增属性常量
-ATTR_TOTAL_POWER_SUPPLY_TIME: Final = "total_power_supply_time"
-ATTR_TOTAL_HEATING_BURNING_TIME: Final = "total_heating_burning_time"
-ATTR_TOTAL_HOT_WATER_BURNING_TIME: Final = "total_hot_water_burning_time"
-ATTR_HEATING_BURNING_TIMES: Final = "heating_burning_times"
-ATTR_HOT_WATER_BURNING_TIMES: Final = "hot_water_burning_times"
+# These are now defined in device configuration JSON files
 
 # Supported platforms
-PLATFORMS: Final = frozenset(["sensor", "water_heater", "climate"])
+PLATFORMS: Final = frozenset(["sensor", "water_heater", "climate", "switch", "select", "text"])
 
 # Default values
 DEFAULT_UPDATE_INTERVAL: Final = 300  # seconds
@@ -50,162 +33,260 @@ DEVICE_TYPE_WATER_HEATER: Final = "water_heater"
 ENTITY_CATEGORY_DIAGNOSTIC: Final = "diagnostic"
 ENTITY_CATEGORY_CONFIG: Final = "config"
 
-# Temperature ranges
-MIN_TEMP: Final = 35
-MAX_TEMP: Final = 65
-TEMP_STEP: Final = 1
-
-# 模式映射定义
-HEATING_MODES: Final = {
-    # Mode name: {display: display name, codes: [mode code list], command: command name, value: command value, requires_normal: whether need to switch to normal mode first}
-    "normal": {
-        "display": "Normal Heating",
-        "codes": ["3"],
-        "command": "summerWinter",
-        "value": "31",
-        "requires_normal": False,
-    },
-    "energy_saving": {
-        "display": "Heating Energy Saving",
-        "codes": ["B", "4B"],
-        "command": "energySavingMode",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "outdoor": {
-        "display": "Heating Outdoor",
-        "codes": ["13", "53"],
-        "command": "outdoorMode",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "rapid": {
-        "display": "Fast Heating",
-        "codes": ["43", "4B", "53", "63"],
-        "command": "rapidHeating",
-        "value": "31",
-        "requires_normal": True,
-    },
-    "standby": {
-        "display": "Heating Off",
-        "codes": ["0", "1", "2"],
-        "command": "summerWinter",
-        "value": "31",
-        "requires_normal": False,
-    },
-    # Temporarily hide scheduled mode
-    # "scheduled": {
-    #     "display": "Heating Scheduled",
-    #     "codes": ["23", "63"],
-    #     "command": "scheduledMode",
-    #     "value": "31",
-    #     "requires_normal": True,
-    # },
-}
-
-# Map mode codes to mode names
-CODE_TO_MODE: Final = {
-    code: mode for mode, config in HEATING_MODES.items() for code in config["codes"]
-}
-
-# Extract various mode code lists for helper functions
-NORMAL_HEATING_CODES: Final = HEATING_MODES["normal"]["codes"]
-ENERGY_SAVING_CODES: Final = HEATING_MODES["energy_saving"]["codes"]
-OUTDOOR_MODES_CODES: Final = HEATING_MODES["outdoor"]["codes"]
-RAPID_HEATING_CODES: Final = HEATING_MODES["rapid"]["codes"]
-HEATING_OFF_MODES_CODES: Final = HEATING_MODES["standby"]["codes"]
-
-# Burning state mapping
-BURNING_STATES: Final = {
-    "30": "Standby",
-    "31": "Heating Water",
-    "32": "Burning",
-    "33": "Error",
-}
-
 HOST: Final = "https://iot.rinnai.com.cn/app"
-LOGIN_URL: Final = f"{HOST}/V1/login"
-INFO_URL: Final = f"{HOST}/V1/device/list"
-PROCESS_PARAMETER_URL: Final = f"{HOST}/V1/device/processParameter"
+BASE_URL: Final = HOST
 
 # Rinnai Smart Home app built-in accessKey
 AK: Final = "A39C66706B83CCF0C0EE3CB23A39454D"
 REFESH_TIME: Final = 86400  # 24 hours
-# State parameters
-STATE_PARAMETERS: Final = {
-    "operationMode",
-    "roomTempControl",
-    "heatingOutWaterTempControl",
-    "burningState",
-    "hotWaterTempSetting",
-    "heatingTempSettingNM",
-    "heatingTempSettingHES",
+
+# Centralized API Request Definitions
+# Source: Reverse engineered from com.bugull.rinnai.furnace app v3.8.1
+# Service interfaces: Account.kt, Device.kt, User.kt, Message.kt
+API_DEFINITIONS: Final = {
+    # --- Account ---
+    "login": {
+        "url": "/V1/login",
+        "method": "GET"
+    },
+    # 获取手机验证码
+    "get_verification_code": {
+        "url": "/V1/getVerificationCode",
+        "method": "GET",
+        "params": {"phone": "{phone}"}
+    },
+    # 校验验证码
+    "check_verification_code": {
+        "url": "/V1/checkVerificationCode",
+        "method": "GET",
+        "params": {"code": "{code}", "phone": "{phone}"}
+    },
+    # 注册账号
+    "register": {
+        "url": "/V1/register",
+        "method": "POST",
+        "data": {"username": "{username}", "password": "{password}"}
+    },
+    # 重置密码
+    "reset_password": {
+        "url": "/V1/reset",
+        "method": "POST",
+        "data": {"username": "{username}", "password": "{password}"}
+    },
+    # 查询账号权限（多身份：业主/租客等）
+    "user_permission": {
+        "url": "/V2/authPermission",
+        "method": "GET",
+        "params": {"username": "{username}"}
+    },
+    # 登出（注销 token）
+    "logout": {
+        "url": "/V1/erase",
+        "method": "POST"
+    },
+
+    # --- Device ---
+    "device_list": {
+        "url": "/V1/device/list",
+        "method": "GET"
+    },
+    "device_state": {
+        "url": "/V1/device/processParameter",
+        "method": "GET"
+    },
+    # 添加设备（WiFi 配网后绑定）
+    "add_device": {
+        "url": "/V1/device/save",
+        "method": "POST",
+        "data": {
+            "name": "{name}",
+            "mac": "{mac}",
+            "authCode": "{auth_code}",
+            "province": "{province}",
+            "city": "{city}",
+            "deviceType": "{device_type}"
+        }
+    },
+    # 解绑/删除设备
+    "unbind_device": {
+        "url": "/V1/device/unbind",
+        "method": "POST",
+        "data": {"deviceId": "{device_id}"}
+    },
+    # 重命名设备
+    "rename_device": {
+        "url": "/V1/device/update",
+        "method": "POST",
+        "data": {"name": "{name}", "deviceId": "{device_id}"}
+    },
+    # 设备分享给其他用户
+    "share_device": {
+        "url": "/V1/device/share",
+        "method": "POST",
+        "data": {"username": "{username}", "deviceId": "{device_id}"}
+    },
+    # 取消设备分享
+    "cancel_share": {
+        "url": "/V1/device/cancelShare",
+        "method": "POST",
+        "data": {"deviceId": "{device_id}", "userId": "{user_id}"}
+    },
+    # 获取设备分享人列表
+    "device_share_persons": {
+        "url": "/V1/device/sharedPerson",
+        "method": "GET",
+        "params": {"deviceId": "{device_id}"}
+    },
+    # 扫码解析设备 MAC
+    "decrypt_qrcode": {
+        "url": "/V1/device/decryptQrcode",
+        "method": "POST",
+        "data": {"qrcode": "{qrcode}"}
+    },
+    # 燃气/用水量历史统计
+    "gas_water_consumption": {
+        "url": "/V1/device/gasWaterConsumption",
+        "method": "POST",
+        "data": {
+            "date": "{date}",
+            "dateType": "{date_type}",
+            "deviceId": "{device_id}",
+            "searchType": "{search_type}"
+        }
+    },
+    # 空气消耗量（用于净水器等）
+    "air_consumption": {
+        "url": "/V1/device/airConsumption",
+        "method": "GET",
+        "params": {"deviceId": "{device_id}", "type": "{type}"}
+    },
+    # 故障码列表（按设备 classID 查询）
+    "fault_code_list": {
+        "url": "/V2/faultCode/getCodes",
+        "method": "GET",
+        "params": {"classID": "{class_id}"}
+    },
+    # 故障码版本
+    "fault_code_version": {
+        "url": "/V1/faultCode/version",
+        "method": "GET"
+    },
+    # 可绑定设备列表（用于热泵温控器绑定采暖炉）
+    "bindable_device_list": {
+        "url": "/V1/device/bindableList",
+        "method": "GET",
+        "params": {"deviceId": "{device_id}"}
+    },
+    # 绑定子设备（热泵温控器 ↔ 热泵主机）
+    "bind_device": {
+        "url": "/V1/device/bind",
+        "method": "POST",
+        "data": {"mac": "{mac}", "deviceIds": "{device_ids}"}
+    },
+    # 温控器绑定房间类型（地暖/风盘/散热器）
+    "update_thermostat_room": {
+        "url": "/V1/device/updateRoom",
+        "method": "POST",
+        "data": {"name": "{name}", "deviceId": "{device_id}", "roomType": "{room_type}"}
+    },
+
+    # --- Schedule ---
+    "get_schedule": {
+        "url": "/V1/device/schedule/getScheduleInfo",
+        "method": "GET",
+        "params": {
+            "mac": "{mac}",
+            "type": "{heat_type}"
+        }
+    },
+    "save_schedule": {
+        "url": "/V1/device/schedule/saveScheduleHour",
+        "method": "POST",
+        "data": {
+            "byteStr": "{data}",
+            "mac": "{mac}",
+            "type": "{heat_type}"
+        }
+    },
+
+    # --- User ---
+    # App 版本检查
+    "app_version": {
+        "url": "/V1/appVersion",
+        "method": "GET"
+    },
+    # 固件版本查询
+    "firmware_version": {
+        "url": "/V1/firmware",
+        "method": "GET",
+        "params": {"mac": "{mac}"}
+    },
+    # 获取省市区列表
+    "get_area": {
+        "url": "/V1/area",
+        "method": "GET"
+    },
+    # 获取所有产品类型（classID → 产品名称映射）
+    "product_list": {
+        "url": "/V1/product/getList",
+        "method": "GET"
+    },
+
+    # --- Message ---
+    # 设备消息列表（故障、维护等）
+    "message_device_list": {
+        "url": "/V1/message/device/list",
+        "method": "GET",
+        "params": {"type": "{type}"}
+    },
+    # 分享消息列表
+    "message_share_list": {
+        "url": "/V1/message/share/list",
+        "method": "GET"
+    },
+    # 系统消息列表
+    "message_system_list": {
+        "url": "/V1/message/system/list",
+        "method": "GET"
+    },
+    # 未读消息数量统计
+    "message_count": {
+        "url": "/V1/message/statistic/count",
+        "method": "GET",
+        "params": {"msgType": "{msg_type}"}
+    },
+}
+
+# MQTT Definitions
+# Source: Reverse engineered from com.bugull.rinnai.furnace app v3.8.1
+# Topic builder: ExtensionKt.getTopic(mac, type) = "rinnai/SR/01/SR/{mac}/{type}/"
+MQTT_DEFINITIONS: Final = {
+    "topics": {
+        # 设备状态推送（burningState, operationMode, 温度等）
+        "info": "rinnai/SR/01/SR/{mac}/inf/",
+        # 能耗数据推送（gasUsed, 燃烧时长等）
+        "energy": "rinnai/SR/01/SR/{mac}/stg/",
+        # 下发控制指令
+        "set": "rinnai/SR/01/SR/{mac}/set/",
+        # 系统事件（设备绑定/解绑通知、在线心跳 JA4）
+        "sys": "rinnai/SR/01/SR/{mac}/sys/",
+        # 主动查询设备状态（热泵等新设备使用）
+        "get": "rinnai/SR/01/SR/{mac}/get/",
+        # 设备响应（get 的回包）
+        "res": "rinnai/SR/01/SR/{mac}/res/",
+    },
+    "protocol": {
+        "info_code": "FFFF",
+        "reservation_code": "03F1",
+        "energy_pattern": "J05",
+        "command_pattern": "J00",
+        "command_sum": "1",
+        # sys topic: 设备上线/下线通知，格式 {"ptn":"JA3","online":"1"|"0","timestamp":<ms>}
+        "online_pattern": "JA3",
+        # sys topic: 周期心跳（未在实测中观察到，暂保留）
+        "heartbeat_pattern": "JA4",
+    }
 }
 
 
-# Helper methods - for unified state determination
-def is_energy_saving_mode(operation_mode: str) -> bool:
-    """Determine if the mode is energy saving. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
 
-    # If it's text status
-    if "Energy Saving" in operation_mode:
-        return True
-
-    # If it's numeric code, check if it's in energy saving mode codes
-    return operation_mode in ENERGY_SAVING_CODES
-
-
-def is_outdoor_mode(operation_mode: str) -> bool:
-    """Determine if the mode is outdoor mode. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
-
-    # If it's text status
-    if "Outdoor" in operation_mode:
-        return True
-
-    # If it's numeric code
-    return operation_mode in OUTDOOR_MODES_CODES
-
-
-def is_rapid_heating_mode(operation_mode: str) -> bool:
-    """Determine if the mode is rapid heating. Can handle text status or numeric code."""
-    if not operation_mode:
-        return False
-
-    # If it's text status
-    if "Fast" in operation_mode:
-        return True
-
-    # If it's numeric code
-    return operation_mode in RAPID_HEATING_CODES
-
-
-def is_heating_off_mode(operation_mode: str) -> bool:
-    """Determine if heating is off. Can handle text status or numeric code."""
-    if not operation_mode:
-        return True
-
-    # If it's text status
-    if any(
-        off_mode in operation_mode
-        for off_mode in ["Power Off", "Heating Off", "Standby"]
-    ):
-        return True
-
-    # If it's numeric code
-    return operation_mode in HEATING_OFF_MODES_CODES
-
-
-def get_burning_state_ha(burning_state: str) -> str:
-    """Get burning state formatted for Home Assistant. Can handle text status or numeric code."""
-    if not burning_state:
-        return "Standby"
-
-    # If it's numeric code
-    if burning_state.isdigit():
-        return BURNING_STATES.get(burning_state)
-
-    return burning_state

@@ -17,9 +17,10 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .client import RinnaiClient
+from .core.client import RinnaiClient
 from .const import (
     CONF_CONNECT_TIMEOUT,
+    CONF_EXPERIMENTAL_SENSORS,
     CONF_UPDATE_INTERVAL,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_UPDATE_INTERVAL,
@@ -101,15 +102,11 @@ class RinnaiConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow for this handler."""
-        return RinnaiOptionsFlowHandler(config_entry)
+        return RinnaiOptionsFlowHandler()
 
 
 class RinnaiOptionsFlowHandler(OptionsFlow):
     """Handle Rinnai options."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        super().__init__(config_entry)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -131,6 +128,10 @@ class RinnaiOptionsFlowHandler(OptionsFlow):
                     CONF_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT
                 ),
             ): vol.All(vol.Coerce(int), vol.Range(min=10, max=60)),
+            vol.Optional(
+                CONF_EXPERIMENTAL_SENSORS,
+                default=self.config_entry.options.get(CONF_EXPERIMENTAL_SENSORS, False),
+            ): bool,
         }
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(options))
