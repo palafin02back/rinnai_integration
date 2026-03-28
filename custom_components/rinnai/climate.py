@@ -154,6 +154,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
                 self._attr_hvac_action = HVACAction.IDLE
 
         self._update_temperature_attributes()
+        self._attr_current_temperature = self._attr_target_temperature
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -216,7 +217,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
             
         _LOGGER.debug("Executing transition: %s", transition_key)
         
-        if await execute_transition(self.coordinator.client, self._device_id, steps):
+        if await execute_transition(self.coordinator, self._device_id, steps):
             # Optimistic update
             self._current_mode = target_mode
             self._update_attributes() # Re-evaluate attributes based on new mode

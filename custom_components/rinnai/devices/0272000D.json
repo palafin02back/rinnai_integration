@@ -1,0 +1,154 @@
+{
+    "_comment": "RUS-R**E51系列 热水器",
+    "name": "Rinnai Hot Water Heater E51",
+    "features": {
+        "heat_type": "E51_HOT_WATER",
+        "energy_data_keys": [
+            "gasConsumption"
+        ]
+    },
+    "supported_requests": [
+        "get_schedule",
+        "save_schedule",
+        "air_consumption",
+        "gas_water_consumption"
+    ],
+    "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 5
+    },
+    "processors": {
+        "hotWaterTempSetting": [
+            "hex_to_int"
+        ],
+        "gasConsumption": [
+            "hex_to_int",
+            {
+                "func": "divide",
+                "args": [
+                    10000
+                ]
+            }
+        ]
+    },
+    "state_mapping": {
+        "hot_water_temp": "hotWaterTempSetting",
+        "operation_mode": "operationMode",
+        "burning_state": "burningState",
+        "gas_usage": "gasConsumption",
+        "fault_code": "faultCode",
+        "error_code": "errorCode",
+        "byte_str": "byteStr",
+        "monthly_gas_consumption": "monthlyGasConsumption",
+        "yearly_gas_consumption": "yearlyGasConsumption",
+        "today_gas_consumption": "todayGasConsumption",
+        "yesterday_gas_consumption": "yesterdayGasConsumption"
+    },
+    "entities": {
+        "water_heater": [
+            {
+                "name": "热水器",
+                "key": "main",
+                "min_temp": 35,
+                "max_temp": 60,
+                "step": 1,
+                "command_topic": "hotWaterTempSetting",
+                "temp_format": "hex4",
+                "state_attribute": "hot_water_temp",
+                "operation_mode": "Hot Water"
+            }
+        ],
+        "sensor": [
+            {
+                "key": "hot_water_temp",
+                "name": "热水设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "hot_water_temp"
+            },
+            {
+                "key": "burning_state",
+                "name": "燃烧状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "burning_state",
+                "value_map": {
+                    "30": "Standby",
+                    "31": "Heating Water",
+                    "32": "Burning",
+                    "33": "Error"
+                }
+            },
+            {
+                "key": "gas_usage",
+                "name": "当前燃气用量",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "gas_usage",
+                "experimental": true
+            },
+            {
+                "key": "fault_code",
+                "name": "故障码",
+                "entity_category": "diagnostic",
+                "state_attribute": "fault_code"
+            },
+            {
+                "key": "monthly_gas_consumption",
+                "name": "本月燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "monthly_gas_consumption"
+            },
+            {
+                "key": "yearly_gas_consumption",
+                "name": "本年燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "yearly_gas_consumption"
+            },
+            {
+                "key": "today_gas_consumption",
+                "name": "今日燃气用量",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "today_gas_consumption"
+            },
+            {
+                "key": "yesterday_gas_consumption",
+                "name": "昨日燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "yesterday_gas_consumption"
+            }
+        ],
+        "select": [
+            {
+                "key": "operation_mode",
+                "name": "运行模式",
+                "type": "command_select",
+                "command_key": "operationMode",
+                "state_attribute": "operation_mode",
+                "options_map": {
+                    "正常": "00",
+                    "冬季节能": "01",
+                    "自动": "02"
+                }
+            }
+        ]
+    }
+}
