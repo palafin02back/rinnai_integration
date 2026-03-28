@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.helpers import entity_registry as er
+
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorEntityDescription,
@@ -16,7 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN
+from .const import CONF_EXPERIMENTAL_SENSORS, DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
 
@@ -30,21 +32,43 @@ async def async_setup_entry(
     """Set up the Rinnai sensors based on a config entry."""
     coordinator: RinnaiCoordinator = hass.data[DOMAIN][entry.entry_id]
 
+    experimental_enabled = entry.options.get(CONF_EXPERIMENTAL_SENSORS, False)
+
     entities = []
     for device_id in coordinator.data["devices"]:
         device = coordinator.get_device(device_id)
         if not device or not device.config:
             continue
-            
+
         if sensor_configs := device.config.entities.get("sensor"):
             for config in sensor_configs:
                 sensor_type = config.get("type", "generic")
                 if sensor_type == "reservation_sensor":
                     entities.append(RinnaiHeatingReservationSensor(coordinator, device_id, config))
                 else:
-                    entities.append(RinnaiGenericSensor(coordinator, device_id, config))
+                    entities.append(RinnaiGenericSensor(coordinator, device_id, config, experimental_enabled))
 
     async_add_entities(entities)
+
+    # Sync experimental sensor visibility with the option.
+    # entity_registry_enabled_default only applies to first-time registration;
+    # we must explicitly update already-registered entries.
+    ent_reg = er.async_get(hass)
+    for entity in entities:
+        if not isinstance(entity, RinnaiGenericSensor) or not entity.experimental:
+            continue
+        entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, entity.unique_id)
+        if not entity_id:
+            continue
+        reg_entry = ent_reg.async_get(entity_id)
+        if not reg_entry:
+            continue
+        if not experimental_enabled and reg_entry.disabled_by is None:
+            ent_reg.async_update_entity(
+                entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+            )
+        elif experimental_enabled and reg_entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
+            ent_reg.async_update_entity(entity_id, disabled_by=None)
 
 
 class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
@@ -55,10 +79,15 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         coordinator: RinnaiCoordinator,
         device_id: str,
         config: dict[str, Any],
+        experimental_enabled: bool = False,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, device_id, config)
-        
+
+        self.experimental: bool = config.get("experimental", False)
+        if self.experimental and not experimental_enabled:
+            self._attr_entity_registry_enabled_default = False
+
         description = SensorEntityDescription(
             key=config["key"],
             name=config["name"],

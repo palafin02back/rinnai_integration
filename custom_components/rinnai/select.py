@@ -28,10 +28,13 @@ async def async_setup_entry(
         device = coordinator.get_device(device_id)
         if not device or not device.config:
             continue
-            
+
         if select_configs := device.config.entities.get("select"):
             for config in select_configs:
-                entities.append(RinnaiGenericSelect(coordinator, device_id, config))
+                if config.get("type") == "command_select":
+                    entities.append(RinnaiCommandSelect(coordinator, device_id, config))
+                else:
+                    entities.append(RinnaiGenericSelect(coordinator, device_id, config))
 
     async_add_entities(entities)
 
@@ -113,5 +116,46 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
 
         if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
             await self.coordinator.async_refresh_schedule(self._device_id)
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+
+class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
+    """A select entity that sends an ENL command when an option is chosen.
+
+    Config keys:
+        command_key  – ENL parameter name (e.g. "operationMode")
+        options_map  – dict mapping display label → ENL value
+                       (e.g. {"Normal": "00", "Winter Save": "01"})
+        state_attribute (optional) – state_mapping key for current value
+    """
+
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
+        super().__init__(coordinator, device_id, config)
+        self._command_key: str = config["command_key"]
+        self._options_map: dict[str, str] = config["options_map"]
+        self._value_to_label: dict[str, str] = {v: k for k, v in self._options_map.items()}
+        self._state_attribute: str | None = config.get("state_attribute")
+        self._attr_options = list(self._options_map.keys())
+        self._update_attributes()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    def _update_attributes(self) -> None:
+        if not self._state_attribute:
+            return
+        raw_val = self.get_state_value(self._state_attribute)
+        self._attr_current_option = self._value_to_label.get(str(raw_val) if raw_val is not None else "")
+
+    async def async_select_option(self, option: str) -> None:
+        value = self._options_map.get(option)
+        if value is None:
+            return
+        if await self.coordinator.async_send_command(
+            self._device_id, {self._command_key: value}
+        ):
             self._attr_current_option = option
             self.async_write_ha_state()

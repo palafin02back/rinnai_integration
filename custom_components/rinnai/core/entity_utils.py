@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..core.client import RinnaiClient
+if TYPE_CHECKING:
+    from ..coordinator import RinnaiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,15 +39,14 @@ def get_state_value(device_state: Any, attribute_key: str, mapping: dict[str, st
     return None
 
 async def execute_transition(
-    client: RinnaiClient, 
-    device_id: str, 
-    steps: list[dict[str, Any]]
+    coordinator: "RinnaiCoordinator",
+    device_id: str,
+    steps: list[dict[str, Any]],
 ) -> bool:
-    """
-    Execute a sequence of transition steps.
-    
+    """Execute a sequence of transition steps via the coordinator (supports optimistic state).
+
     Args:
-        client: The RinnaiClient instance.
+        coordinator: The RinnaiCoordinator instance.
         device_id: The device ID.
         steps: List of transition steps. Each step is a dict with 'cmd', 'value', and optional 'delay'.
     """
@@ -54,20 +54,20 @@ async def execute_transition(
         cmd_key = step.get("cmd")
         cmd_value = step.get("value")
         delay = step.get("delay", 0)
-        
+
         if not cmd_key or cmd_value is None:
             _LOGGER.warning("Invalid transition step at index %d: %s", idx, step)
             continue
-            
+
         command = {cmd_key: cmd_value}
         _LOGGER.debug("Executing transition step %d: %s", idx + 1, command)
-        
-        success = await client.send_command(device_id, command)
+
+        success = await coordinator.async_send_command(device_id, command)
         if not success:
             _LOGGER.warning("Failed to execute transition step %d: %s", idx + 1, command)
             return False
-            
+
         if delay > 0:
             await asyncio.sleep(delay)
-            
+
     return True

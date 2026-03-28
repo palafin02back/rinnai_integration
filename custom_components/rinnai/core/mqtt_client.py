@@ -15,6 +15,8 @@ from ..const import RINNAI_HOST, RINNAI_PORT
 
 _LOGGER = logging.getLogger(__name__)
 
+_RECONNECT_DELAYS = [5, 10, 30, 60, 120]  # seconds between reconnect attempts
+
 
 class RinnaiMQTTClient:
     """Custom MQTT client for Rinnai devices."""
@@ -31,6 +33,8 @@ class RinnaiMQTTClient:
         self._subscribes = {}
         self._loop_task = None
         self._connect_lock = asyncio.Lock()
+        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_attempt = 0
 
         self.client.username_pw_set(self.username, self.password)
         self.hass.async_add_executor_job(
@@ -84,6 +88,7 @@ class RinnaiMQTTClient:
                         rc,
                         mqtt.error_string(rc),
                     )
+                    self.hass.loop.call_soon_threadsafe(self._schedule_reconnect)
 
             def on_message(client, userdata, msg):
                 """Handle incoming message."""
@@ -119,8 +124,52 @@ class RinnaiMQTTClient:
                 return False
             return self.connected
 
+    def _schedule_reconnect(self) -> None:
+        """Schedule a reconnect task (must be called from the HA event loop)."""
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
+        self._reconnect_task = self.hass.async_create_task(self._async_reconnect())
+
+    async def _async_reconnect(self) -> None:
+        """Attempt to reconnect with exponential backoff."""
+        while True:
+            delay = _RECONNECT_DELAYS[
+                min(self._reconnect_attempt, len(_RECONNECT_DELAYS) - 1)
+            ]
+            _LOGGER.info(
+                "Reconnecting to MQTT broker in %s seconds (attempt %s)",
+                delay,
+                self._reconnect_attempt + 1,
+            )
+            await asyncio.sleep(delay)
+            self._reconnect_attempt += 1
+
+            try:
+                async with self._connect_lock:
+                    if self.connected:
+                        self._reconnect_attempt = 0
+                        return
+                    await self.hass.async_add_executor_job(
+                        self.client.reconnect
+                    )
+                    # Wait for on_connect to fire
+                    for _ in range(10):
+                        if self.connected:
+                            break
+                        await asyncio.sleep(0.5)
+
+                if self.connected:
+                    _LOGGER.info("MQTT reconnected successfully")
+                    self._reconnect_attempt = 0
+                    return
+            except Exception as err:
+                _LOGGER.warning("MQTT reconnect attempt failed: %s", err)
+
     async def async_disconnect(self) -> None:
         """Disconnect from the MQTT broker."""
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
         if self.client:
             _LOGGER.info("Disconnecting from MQTT broker")
             await self.hass.async_add_executor_job(self.client.disconnect)

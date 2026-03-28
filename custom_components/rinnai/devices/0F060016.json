@@ -1,7 +1,8 @@
 {
-    "name": "Rinnai Boiler G56",
+    "_comment": "RBS_**G58系列 采暖炉",
+    "name": "Rinnai Boiler G58",
     "features": {
-        "heat_type": "G56_HEAT_OVEN",
+        "heat_type": "G58_HEAT_OVEN",
         "gas_consumption_digits": 8,
         "energy_data_keys": [
             "gasUsed",
@@ -411,63 +412,6 @@
                 "unit_of_measurement": "m³",
                 "entity_category": "diagnostic",
                 "state_attribute": "gas_usage",
-                "experimental": true
-            },
-            {
-                "key": "supply_time",
-                "name": "实际使用时间",
-                "device_class": "duration",
-                "unit_of_measurement": "d",
-                "entity_category": "diagnostic",
-                "state_attribute": "supply_time",
-                "experimental": true
-            },
-            {
-                "key": "total_power_supply_time",
-                "name": "累计通电时间",
-                "device_class": "duration",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "d",
-                "entity_category": "diagnostic",
-                "state_attribute": "total_power_supply_time",
-                "experimental": true
-            },
-            {
-                "key": "total_heating_burning_time",
-                "name": "采暖累计燃烧时间",
-                "device_class": "duration",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "h",
-                "entity_category": "diagnostic",
-                "state_attribute": "total_heating_burning_time",
-                "experimental": true
-            },
-            {
-                "key": "total_hot_water_burning_time",
-                "name": "热水累计燃烧时间",
-                "device_class": "duration",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "h",
-                "entity_category": "diagnostic",
-                "state_attribute": "total_hot_water_burning_time",
-                "experimental": true
-            },
-            {
-                "key": "heating_burning_times",
-                "name": "采暖点火次数",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "次",
-                "entity_category": "diagnostic",
-                "state_attribute": "heating_burning_times",
-                "experimental": true
-            },
-            {
-                "key": "hot_water_burning_times",
-                "name": "热水点火次数",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "次",
-                "entity_category": "diagnostic",
-                "state_attribute": "hot_water_burning_times",
                 "experimental": true
             },
             {

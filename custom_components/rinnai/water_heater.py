@@ -58,6 +58,9 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         
         self._command_topic = config["command_topic"]
         self._state_attribute = config["state_attribute"]
+        # "hex2" → 2-char (G56 style: 40°C → "28")
+        # "hex4" → 4-char (E-series style: 40°C → "2800")
+        self._temp_format = config.get("temp_format", "hex2")
         
         # Operation mode name from config, default to "Hot Water" if not specified (display only)
         operation_mode = config.get("operation_mode", "Hot Water")
@@ -86,6 +89,7 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
             self._attr_target_temperature = self.get_state_value(self._state_attribute)
         except (ValueError, TypeError):
             self._attr_target_temperature = 0
+        self._attr_current_temperature = self._attr_target_temperature
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -97,7 +101,9 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         if temperature < self.min_temp or temperature > self.max_temp:
             return
 
-        hex_temperature = hex(temperature)[2:].upper()
+        hex_temperature = hex(temperature)[2:].upper().zfill(2)
+        if self._temp_format == "hex4":
+            hex_temperature = hex_temperature + "00"
         command = {self._command_topic: hex_temperature}
 
         success = await self.coordinator.async_send_command(self._device_id, command)

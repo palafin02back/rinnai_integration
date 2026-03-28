@@ -340,9 +340,12 @@ class RinnaiClient:
 
         self.device_states[device_id].update(state_data)
         
-        # Sync heatingReservationMode to byteStr if present
-        if "heatingReservationMode" in state_data:
-            self.device_states[device_id]["byteStr"] = state_data["heatingReservationMode"]
+        # Sync reservation mode fields to byteStr (G56/G55/G58 use heatingReservationMode,
+        # E-series water heaters use hotWaterReservationMode)
+        for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
+            if reservation_key in state_data:
+                self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                break
 
         # Notify callbacks
         if device_id in self._state_callbacks:
@@ -366,8 +369,10 @@ class RinnaiClient:
         topics = {
             "inf": MQTT_DEFINITIONS["topics"]["info"].format(mac=device_mac),
             "stg": MQTT_DEFINITIONS["topics"]["energy"].format(mac=device_mac),
+            "sys": MQTT_DEFINITIONS["topics"]["sys"].format(mac=device_mac),
+            "res": MQTT_DEFINITIONS["topics"]["res"].format(mac=device_mac),
         }
-        
+
         proto = MQTT_DEFINITIONS["protocol"]
 
         for topic_type, topic in topics.items():
@@ -375,20 +380,42 @@ class RinnaiClient:
             def message_received(msg, topic_type=topic_type, device_id=device_id):
                 try:
                     payload = json.loads(msg.payload)
-                    
-                    if (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["info_code"]):
-                        state_data = self._process_device_info(payload)
-                        if state_data:
-                            self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "stg" and payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]):
-                        state_data = self._process_energy_data(payload, device_id)
-                        if state_data:
-                            self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "inf" and payload.get("enl") and payload.get("code") == proto["reservation_code"]):
-                        state_data = self._process_reservation_info(payload)
-                        if state_data:
-                            self._handle_state_update(device_id, state_data)
-                            
+
+                    if topic_type == "inf":
+                        code = payload.get("code")
+                        if payload.get("enl") and code == proto["info_code"]:
+                            state_data = self._process_device_info(payload)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+                        elif payload.get("enl") and code == proto["reservation_code"]:
+                            state_data = self._process_reservation_info(payload)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+                    elif topic_type == "stg":
+                        if payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]:
+                            state_data = self._process_energy_data(payload, device_id)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+                    elif topic_type == "sys":
+                        ptn = payload.get("ptn")
+                        if ptn == proto["online_pattern"]:
+                            # Device online/offline notification
+                            is_online = payload.get("online") == "1"
+                            _LOGGER.debug(
+                                "Device %s online status: %s", device_id, is_online
+                            )
+                            self._handle_state_update(
+                                device_id, {"_online": is_online}
+                            )
+                        elif ptn == proto["heartbeat_pattern"]:
+                            _LOGGER.debug("Heartbeat received for device %s", device_id)
+                    elif topic_type == "res":
+                        # Response to an active get/ query (same ENL format as inf/)
+                        if payload.get("enl"):
+                            state_data = self._process_device_info(payload)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+
                 except Exception as err:
                     _LOGGER.error("Error processing MQTT message: %s", err)
 
@@ -432,7 +459,7 @@ class RinnaiClient:
         device_data = self.devices[device_id]
         proto = MQTT_DEFINITIONS["protocol"]
         
-        auth_code = device_data.get("authCode", proto["reservation_code"])
+        auth_code = device_data.get("authCode", proto["info_code"])
         device_mac = device_data.get("mac")
         if not device_mac:
             return False
