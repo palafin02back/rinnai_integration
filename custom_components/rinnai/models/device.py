@@ -73,9 +73,13 @@ class RinnaiDevice:
         new_device_type = api_data.get("deviceType", self.device_type)
         if new_device_type != self.device_type:
             self.device_type = new_device_type
-            # Reload config if device type changed
             self.config = config_manager.get_config(self.device_type)
             self.state.config = self.config
+            if self.config is None:
+                _LOGGER.warning(
+                    "Device %s: no config for deviceType '%s', entities unavailable",
+                    self.device_id, self.device_type,
+                )
             
         self.auth_code = api_data.get("authCode", self.auth_code)
 

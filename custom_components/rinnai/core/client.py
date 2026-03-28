@@ -180,7 +180,15 @@ class RinnaiClient:
                         self.device_states[device_id] = {}
                     
                     device_type = device.get("deviceType")
-                    self._device_configs[device_id] = config_manager.get_config(device_type)
+                    device_config = config_manager.get_config(device_type)
+                    self._device_configs[device_id] = device_config
+                    if device_config is None:
+                        _LOGGER.error(
+                            "Device %s (name=%s) has unsupported deviceType '%s' — "
+                            "no entities will be created. To add support, create "
+                            "custom_components/rinnai/devices/%s.json",
+                            device_id, device.get("name"), device_type, device_type,
+                        )
 
                 return True
         except (TimeoutError, aiohttp.ClientError) as err:

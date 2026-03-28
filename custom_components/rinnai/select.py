@@ -36,6 +36,7 @@ async def async_setup_entry(
                 else:
                     entities.append(RinnaiGenericSelect(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d select entities", len(entities))
     async_add_entities(entities)
 
 

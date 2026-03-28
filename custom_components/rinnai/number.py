@@ -35,6 +35,7 @@ async def async_setup_entry(
             for config in number_configs:
                 entities.append(RinnaiNumberEntity(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d number entities", len(entities))
     async_add_entities(entities)
 
 

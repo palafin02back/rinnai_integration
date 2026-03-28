@@ -37,6 +37,7 @@ async def async_setup_entry(
                 elif switch_type == "command_switch":
                     entities.append(RinnaiCommandSwitch(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d switch entities", len(entities))
     async_add_entities(entities)
 
 

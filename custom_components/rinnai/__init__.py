@@ -78,6 +78,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: RinnaiConfigEntry) -> bo
     if not coordinator.data.get("devices"):
         raise ConfigEntryNotReady("No devices found")
 
+    device_count = len(coordinator.data["devices"])
+    _LOGGER.info(
+        "Rinnai integration ready: %d device(s) — %s",
+        device_count,
+        [
+            f"{d.device_name} ({d.device_type})"
+            for d in coordinator.data["devices"].values()
+        ],
+    )
+
     # Store the coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 

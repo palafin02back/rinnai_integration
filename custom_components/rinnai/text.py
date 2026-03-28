@@ -33,6 +33,7 @@ async def async_setup_entry(
             for config in text_configs:
                 entities.append(RinnaiGenericText(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d text entities", len(entities))
     async_add_entities(entities)
 
 

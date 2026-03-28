@@ -253,6 +253,7 @@ class RinnaiCoordinator(DataUpdateCoordinator):
         if not device or not device.config:
             return
         if "air_consumption" not in device.config.supported_requests:
+            _LOGGER.debug("Device %s: air_consumption not in supported_requests, skipping", device_id)
             return
 
         updates: dict[str, float] = {}

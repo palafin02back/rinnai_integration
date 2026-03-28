@@ -48,6 +48,7 @@ async def async_setup_entry(
                 else:
                     entities.append(RinnaiGenericSensor(coordinator, device_id, config, experimental_enabled))
 
+    _LOGGER.debug("Setting up %d sensor entities", len(entities))
     async_add_entities(entities)
 
     # Sync experimental sensor visibility with the option.

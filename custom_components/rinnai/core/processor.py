@@ -84,9 +84,9 @@ def process_value(value: Any, processor_configs: list[dict[str, Any] | str]) -> 
             try:
                 result = processor_func(result, *args)
             except Exception as e:
-                _LOGGER.warning("Error in processor %s: %s", func_name, e)
+                _LOGGER.warning("Error in processor '%s' (value=%r): %s", func_name, result, e)
         else:
-            _LOGGER.warning("Unknown processor: %s", func_name)
+            _LOGGER.warning("Unknown processor: '%s'", func_name)
             
     return result
 
@@ -100,6 +100,9 @@ def process_data(raw_data: dict[str, Any], config_processors: dict[str, list[Any
     # Apply processors
     for field, processor_list in config_processors.items():
         if field in raw_data:
-            processed_data[field] = process_value(raw_data[field], processor_list)
+            try:
+                processed_data[field] = process_value(raw_data[field], processor_list)
+            except Exception as e:
+                _LOGGER.warning("Failed to process field '%s' (value=%r): %s", field, raw_data[field], e)
             
     return processed_data
