@@ -6,6 +6,17 @@ from typing import Any, Callable
 
 _LOGGER = logging.getLogger(__name__)
 
+PROCESSORS: dict[str, Callable] = {}
+
+def processor(func, name: str = None):
+    if not name:
+        name = func.__name__
+    if name in PROCESSORS:
+        raise Exception("processor with name " + name + " is already defined.")
+    PROCESSORS[name] = func
+    return func
+
+@processor
 def hex_to_int(value: Any, *args) -> int:
     """Convert hex string to integer."""
     if isinstance(value, int):
@@ -20,6 +31,21 @@ def hex_to_int(value: Any, *args) -> int:
             return 0
     return 0
 
+@processor
+def hex4_to_int(value: Any, *args) -> int:
+    """Convert hex string to integer."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        if len(value) >= 2:
+            try:
+                return int(value[:-2], 16)
+            except ValueError:
+                pass
+    _LOGGER.warning("Failed to convert hex4 value: %s", value)
+    return 0
+
+@processor
 def multiply(value: Any, factor: float | int) -> float | int:
     """Multiply value by factor."""
     try:
@@ -31,6 +57,7 @@ def multiply(value: Any, factor: float | int) -> float | int:
     except (ValueError, TypeError):
         return 0
 
+@processor
 def divide(value: Any, factor: float | int) -> float:
     """Divide value by factor."""
     try:
@@ -40,6 +67,7 @@ def divide(value: Any, factor: float | int) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+@processor
 def to_type(value: Any, target_type: str) -> Any:
     """Convert value to target type."""
     try:
@@ -52,13 +80,6 @@ def to_type(value: Any, target_type: str) -> Any:
     except (ValueError, TypeError):
         pass
     return value
-
-PROCESSORS: dict[str, Callable] = {
-    "hex_to_int": hex_to_int,
-    "multiply": multiply,
-    "divide": divide,
-    "to_type": to_type,
-}
 
 def process_value(value: Any, processor_configs: list[dict[str, Any] | str]) -> Any:
     """
