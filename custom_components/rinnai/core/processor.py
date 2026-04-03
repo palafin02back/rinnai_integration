@@ -37,7 +37,7 @@ def hex4_to_int(value: Any, *args) -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, str):
-        if len(value) >= 2:
+        if len(value) >= 4:
             try:
                 return int(value[:-2], 16)
             except ValueError:

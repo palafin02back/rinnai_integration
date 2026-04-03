@@ -220,10 +220,10 @@ class TestProcessorChains:
 
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_hot_water_temp_hex_to_int(self, device_type):
-        """hotWaterTempSetting hex_to_int: "2A" → 42"""
+        """hotWaterTempSetting hex4_to_int: "2A00" → 42°C (E-series uses 4-byte hex)"""
         d = load(device_type)
         chain = d["processors"]["hotWaterTempSetting"]
-        assert process_value("2A", chain) == 42
+        assert process_value("2A00", chain) == 42
 
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_gas_consumption_to_m3(self, device_type):
@@ -529,10 +529,10 @@ class TestEndToEndStatePipeline:
         assert result["heatingBurningTimes"] == 113       # no multiply, raw count
 
     def test_e86_full_inf_payload(self):
-        """E86: water heater temp with hex_to_int (value interpreted as decimal temp)."""
+        """E86: water heater temp with hex4_to_int ("2A00" → 42°C)."""
         d = load("02720E86")
         raw = {
-            "hotWaterTempSetting": "2A",   # 42°C
+            "hotWaterTempSetting": "2A00",   # 42°C in hex4 format
             "gasConsumption":      "00004E20",  # 20000 dec → 2.0 m³
             "burningState":        "30",
         }

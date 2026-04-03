@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom_compone
 
 from processor import (
     hex_to_int,
+    hex4_to_int,
     multiply,
     divide,
     to_type,
@@ -45,6 +46,32 @@ class TestHexToInt:
     def test_none_value(self):
         """Test None returns 0."""
         assert hex_to_int(None) == 0
+
+
+class TestHex4ToInt:
+    """Tests for hex4_to_int function (E-series 4-byte hex temp encoding)."""
+
+    def test_normal_conversion(self):
+        """Standard hex4 values: last 2 chars are always '00'."""
+        assert hex4_to_int("2800") == 40
+        assert hex4_to_int("2A00") == 42
+        assert hex4_to_int("0F00") == 15
+        assert hex4_to_int("3C00") == 60
+
+    def test_already_int(self):
+        assert hex4_to_int(40) == 40
+
+    def test_short_input_returns_zero(self):
+        """Inputs shorter than 4 chars are invalid hex4 and should return 0."""
+        assert hex4_to_int("2A") == 0
+        assert hex4_to_int("28") == 0
+        assert hex4_to_int("") == 0
+
+    def test_none_returns_zero(self):
+        assert hex4_to_int(None) == 0
+
+    def test_invalid_hex_returns_zero(self):
+        assert hex4_to_int("XXXX") == 0
 
 
 class TestMultiply:
