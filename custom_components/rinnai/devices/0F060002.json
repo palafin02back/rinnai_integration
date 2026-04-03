@@ -1,0 +1,198 @@
+{
+  "name": "Rinnai Boiler C66L",
+  "features": {
+    "heat_type": "C66L_HEAT_OVEN",
+    "energy_data_keys": [
+      "airConsumption"
+    ]
+  },
+  "supported_requests": [
+    "air_consumption"
+  ],
+  "processors": {
+    "heatingTempSetting": [
+      "hex_to_int"
+    ],
+    "hotWaterTempSetting": [
+      "hex_to_int"
+    ]
+  },
+  "state_mapping": {
+    "heating_temp": "heatingTempSetting",
+    "hot_water_temp": "hotWaterTempSetting",
+    "burning_state": "burningState",
+    "power": "power",
+    "summer_winter": "summerWinter",
+    "eco_mode": "ecoMode",
+    "outdoor_mode": "outdoorMode",
+    "rapid_heating": "rapidHeating",
+    "cycle_insulation": "temporaryCycleInsulationSetting",
+    "heating_reservation_mode": "heatingReservationMode",
+    "hot_water_reservation_mode": "hotWaterReservationMode",
+    "fault_code": "faultCode",
+    "error_code": "errorCode",
+    "monthly_gas_consumption": "monthlyGasConsumption",
+    "yearly_gas_consumption": "yearlyGasConsumption",
+    "today_gas_consumption": "todayGasConsumption",
+    "yesterday_gas_consumption": "yesterdayGasConsumption"
+  },
+  "entities": {
+    "water_heater": [
+      {
+        "name": "热水器",
+        "key": "main",
+        "min_temp": 35,
+        "max_temp": 60,
+        "step": 1,
+        "command_topic": "hotWaterTempSetting",
+        "state_attribute": "hot_water_temp",
+        "operation_mode": "Hot Water"
+      }
+    ],
+    "sensor": [
+      {
+        "key": "burning_state",
+        "name": "燃烧状态",
+        "entity_category": "diagnostic",
+        "state_attribute": "burning_state",
+        "value_map": {
+          "AA": "Burning",
+          "55": "Standby"
+        }
+      },
+      {
+        "key": "hot_water_temp",
+        "name": "生活热水设定温度",
+        "device_class": "temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "°C",
+        "state_attribute": "hot_water_temp"
+      },
+      {
+        "key": "heating_temp",
+        "name": "采暖设定温度",
+        "device_class": "temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "°C",
+        "state_attribute": "heating_temp"
+      },
+      {
+        "key": "fault_code",
+        "name": "故障码",
+        "entity_category": "diagnostic",
+        "state_attribute": "fault_code"
+      },
+      {
+        "key": "monthly_gas_consumption",
+        "name": "本月燃气用量",
+        "device_class": "gas",
+        "state_class": "total",
+        "unit_of_measurement": "m³",
+        "entity_category": "diagnostic",
+        "state_attribute": "monthly_gas_consumption"
+      },
+      {
+        "key": "yearly_gas_consumption",
+        "name": "本年燃气用量",
+        "device_class": "gas",
+        "state_class": "total",
+        "unit_of_measurement": "m³",
+        "entity_category": "diagnostic",
+        "state_attribute": "yearly_gas_consumption"
+      },
+      {
+        "key": "today_gas_consumption",
+        "name": "今日燃气用量",
+        "device_class": "gas",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "m³",
+        "entity_category": "diagnostic",
+        "state_attribute": "today_gas_consumption"
+      },
+      {
+        "key": "yesterday_gas_consumption",
+        "name": "昨日燃气用量",
+        "device_class": "gas",
+        "state_class": "total",
+        "unit_of_measurement": "m³",
+        "entity_category": "diagnostic",
+        "state_attribute": "yesterday_gas_consumption"
+      }
+    ],
+    "switch": [
+      {
+        "key": "power",
+        "name": "电源",
+        "type": "command_switch",
+        "command_key": "power",
+        "command_on": "01",
+        "command_off": "00",
+        "state_attribute": "power",
+        "on_value": "01"
+      },
+      {
+        "key": "summer_winter",
+        "name": "冬夏切换（采暖）",
+        "type": "command_switch",
+        "command_key": "summerWinter",
+        "command_on": "AA",
+        "command_off": "55",
+        "state_attribute": "summer_winter",
+        "on_value": "AA"
+      },
+      {
+        "key": "eco_mode",
+        "name": "节能模式",
+        "type": "command_switch",
+        "command_key": "ecoMode",
+        "command_on": "AA",
+        "command_off": "55",
+        "state_attribute": "eco_mode",
+        "on_value": "AA"
+      },
+      {
+        "key": "outdoor_mode",
+        "name": "户外模式",
+        "type": "command_switch",
+        "command_key": "outdoorMode",
+        "command_on": "55",
+        "command_off": "AA",
+        "state_attribute": "outdoor_mode",
+        "on_value": "55"
+      },
+      {
+        "key": "rapid_heating",
+        "name": "快速加热",
+        "type": "command_switch",
+        "command_key": "rapidHeating",
+        "command_on": "55",
+        "command_off": "AA",
+        "state_attribute": "rapid_heating",
+        "on_value": "55"
+      },
+      {
+        "key": "cycle_insulation",
+        "name": "一键循环",
+        "type": "command_switch",
+        "command_key": "temporaryCycleInsulationSetting",
+        "command_on": "AA",
+        "command_off": "55",
+        "state_attribute": "cycle_insulation",
+        "on_value": "AA"
+      }
+    ],
+    "number": [
+      {
+        "key": "heating_temp_setpoint",
+        "name": "采暖温度设定",
+        "command_key": "heatingTempSetting",
+        "state_attribute": "heating_temp",
+        "min": 40,
+        "max": 60,
+        "step": 1,
+        "unit_of_measurement": "°C",
+        "temp_format": "hex2"
+      }
+    ]
+  }
+}

@@ -117,6 +117,12 @@ class TestStateMappingConsistency:
         "operMode", "roomTemperatureDisplay",
         # E89 bath injection
         "bathWaterInjectionSetting",
+        # C66L direct mode fields (separate booleans instead of operationMode)
+        "power", "summerWinter", "ecoMode", "outdoorMode",
+        "rapidHeating", "heatingReservationMode", "hotWaterReservationMode",
+        # Synthetic fields injected by coordinator (not from MQTT/processors)
+        "monthlyGasConsumption", "yearlyGasConsumption",
+        "todayGasConsumption", "yesterdayGasConsumption",
     }
 
     @pytest.mark.parametrize("device_type", ALL_DEVICE_TYPES)
