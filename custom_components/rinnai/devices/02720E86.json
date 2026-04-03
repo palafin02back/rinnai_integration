@@ -23,7 +23,7 @@
     },
     "processors": {
         "hotWaterTempSetting": [
-            "hex_to_int"
+            "hex4_to_int"
         ],
         "gasConsumption": [
             "hex_to_int",
