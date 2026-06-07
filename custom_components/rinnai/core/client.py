@@ -120,7 +120,7 @@ class RinnaiClient:
                         "password": self.password_hash,
                         "accessKey": AK,
                         "appType": "2",
-                        "appVersion": "1.0.0",
+                        "appVersion": "3.9.0",
                         "identityLevel": "0",
                     }
 
@@ -153,7 +153,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
                 response = await self._session.get(url, headers=headers)
                 resp_json = await response.json()
@@ -202,7 +202,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
                 response = await self._session.get(
                     url,
@@ -302,7 +302,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 
                 if method == "GET":
                     response = await self._session.get(url, params=final_params, headers=headers)
