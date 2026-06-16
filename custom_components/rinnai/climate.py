@@ -41,6 +41,7 @@ async def async_setup_entry(
             for config in climate_configs:
                 entities.append(RinnaiHeatingClimateEntity(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d climate entities", len(entities))
     async_add_entities(entities)
 
 
@@ -107,6 +108,10 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
             else:
                 if code in codes:
                     return mode_key
+        _LOGGER.debug(
+            "Device %s: unknown operation mode code '%s', defaulting to '%s'",
+            self._device_id, code, self._off_mode,
+        )
         return self._off_mode
 
     def _update_temperature_attributes(self) -> None:
@@ -164,6 +169,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
                 self._attr_hvac_action = HVACAction.IDLE
 
         self._update_temperature_attributes()
+        self._attr_current_temperature = self._attr_target_temperature
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -226,10 +232,13 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
             
         _LOGGER.debug("Executing transition: %s", transition_key)
         
-        if await execute_transition(self.coordinator.client, self._device_id, steps):
-            # Optimistic update
+        if await execute_transition(self.coordinator, self._device_id, steps):
             self._current_mode = target_mode
-            self._update_attributes()  # Re-evaluate attributes based on new mode
+            self._update_attributes()
             self.async_write_ha_state()
-            # MQTT inf/ response will confirm the state change naturally.
-
+            await self.coordinator.async_request_refresh()
+        else:
+            _LOGGER.warning(
+                "Device %s: transition '%s' failed (command send error)",
+                self._device_id, transition_key,
+            )

@@ -22,6 +22,7 @@ from .const import (
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
+    Platform.NUMBER,
     Platform.SENSOR,
     Platform.WATER_HEATER,
     Platform.SWITCH,
@@ -77,13 +78,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: RinnaiConfigEntry) -> bo
     if not coordinator.data.get("devices"):
         raise ConfigEntryNotReady("No devices found")
 
+    device_count = len(coordinator.data["devices"])
+    _LOGGER.info(
+        "Rinnai integration ready: %d device(s) — %s",
+        device_count,
+        [
+            f"{d.device_name} ({d.device_type})"
+            for d in coordinator.data["devices"].values()
+        ],
+    )
+
     # Store the coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Set up all supported platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Reload when options change (e.g. experimental_sensors toggle)
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload entry when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: RinnaiConfigEntry) -> bool:

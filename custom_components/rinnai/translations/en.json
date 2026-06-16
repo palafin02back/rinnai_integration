@@ -129,7 +129,8 @@
             "init": {
                 "data": {
                     "connect_timeout": "Connection Timeout (seconds)",
-                    "update_interval": "Update Interval (seconds)"
+                    "update_interval": "Update Interval (seconds)",
+                    "experimental_sensors": "Enable experimental sensors (gas usage, burn times, power-on time)"
                 }
             }
         }

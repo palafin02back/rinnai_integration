@@ -36,14 +36,19 @@ class ConfigManager:
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         config = RinnaiDeviceConfig.from_dict(data)
-                        
+
                         # Use filename (without extension) as key
                         key = filename[:-5]
                         self._configs[key] = config
-                        
+
                         _LOGGER.debug("Loaded device config: %s", key)
                 except Exception as e:
                     _LOGGER.error("Failed to load config %s: %s", filename, e)
+
+        if self._configs:
+            _LOGGER.info("Loaded %d device configs: %s", len(self._configs), list(self._configs.keys()))
+        else:
+            _LOGGER.error("No device configs loaded from %s — integration will not create any entities", config_dir)
 
     def get_config(self, device_model: str = None) -> RinnaiDeviceConfig | None:
         """Get configuration for specific device model."""

@@ -28,7 +28,7 @@ async def async_setup_entry(
         device = coordinator.get_device(device_id)
         if not device or not device.config:
             continue
-            
+
         if switch_configs := device.config.entities.get("switch"):
             for config in switch_configs:
                 switch_type = config.get("type", "generic")
@@ -37,7 +37,59 @@ async def async_setup_entry(
                 elif switch_type == "command_switch":
                     entities.append(RinnaiCommandSwitch(coordinator, device_id, config))
 
+    _LOGGER.debug("Setting up %d switch entities", len(entities))
     async_add_entities(entities)
+
+
+class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
+    """Representation of Rinnai heating reservation switch."""
+
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator, device_id, config)
+        self._attr_translation_key = "heating_reservation"
+        self._state_attribute = config["state_attribute"]
+        self._update_attributes()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    def _update_attributes(self) -> None:
+        if not self.schedule_manager:
+            return
+
+        raw_hex = self.get_state_value(self._state_attribute)
+        self._attr_is_on = self.schedule_manager.parse_status(raw_hex)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the switch on."""
+        await self._set_reservation_state(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the switch off."""
+        await self._set_reservation_state(False)
+
+    async def _set_reservation_state(self, is_on: bool) -> None:
+        if not self.schedule_manager:
+            return
+
+        raw_hex = self.get_state_value(self._state_attribute)
+        new_hex = self.schedule_manager.update_status(raw_hex, is_on)
+
+        if not new_hex:
+            _LOGGER.warning("Cannot set reservation state: invalid hex or config")
+            return
+
+        _LOGGER.debug("Setting reservation state to %s", "On" if is_on else "Off")
+
+        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
+            await self.coordinator.async_refresh_schedule(self._device_id)
+            self._attr_is_on = is_on
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error("Failed to set reservation state")
 
 
 class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
@@ -109,55 +161,3 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
             self.async_write_ha_state()
         else:
             _LOGGER.error("Failed to send command: %s", self._command)
-
-
-
-class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
-    """Representation of Rinnai heating reservation switch."""
-
-    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
-        """Initialize the switch."""
-        super().__init__(coordinator, device_id, config)
-        self._attr_translation_key = "heating_reservation"
-        self._state_attribute = config["state_attribute"]
-        self._update_attributes()
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._update_attributes()
-        self.async_write_ha_state()
-
-    def _update_attributes(self) -> None:
-        if not self.schedule_manager:
-            return
-
-        raw_hex = self.get_state_value(self._state_attribute)
-        self._attr_is_on = self.schedule_manager.parse_status(raw_hex)
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
-        await self._set_reservation_state(True)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
-        await self._set_reservation_state(False)
-
-    async def _set_reservation_state(self, is_on: bool) -> None:
-        if not self.schedule_manager:
-            return
-
-        raw_hex = self.get_state_value(self._state_attribute)
-        new_hex = self.schedule_manager.update_status(raw_hex, is_on)
-        
-        if not new_hex:
-            _LOGGER.warning("Cannot set reservation state: invalid hex or config")
-            return
-            
-        _LOGGER.debug("Setting reservation state to %s", "On" if is_on else "Off")
-        
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
-            await self.coordinator.async_refresh_schedule(self._device_id)
-            self._attr_is_on = is_on
-            self.async_write_ha_state()
-        else:
-            _LOGGER.error("Failed to set reservation state")

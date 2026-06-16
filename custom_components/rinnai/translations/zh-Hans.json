@@ -137,7 +137,8 @@
             "init": {
                 "data": {
                     "connect_timeout": "连接超时（秒）",
-                    "update_interval": "更新间隔（秒）"
+                    "update_interval": "更新间隔（秒）",
+                    "experimental_sensors": "启用实验性传感器（当前燃气用量、点火次数、燃烧时间、通电时间等）"
                 }
             }
         }

@@ -120,7 +120,7 @@ class RinnaiClient:
                         "password": self.password_hash,
                         "accessKey": AK,
                         "appType": "2",
-                        "appVersion": "1.0.0",
+                        "appVersion": "3.9.0",
                         "identityLevel": "0",
                     }
 
@@ -153,7 +153,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
                 response = await self._session.get(url, headers=headers)
                 resp_json = await response.json()
@@ -180,7 +180,15 @@ class RinnaiClient:
                         self.device_states[device_id] = {}
                     
                     device_type = device.get("deviceType")
-                    self._device_configs[device_id] = config_manager.get_config(device_type)
+                    device_config = config_manager.get_config(device_type)
+                    self._device_configs[device_id] = device_config
+                    if device_config is None:
+                        _LOGGER.error(
+                            "Device %s (name=%s) has unsupported deviceType '%s' — "
+                            "no entities will be created. To add support, create "
+                            "custom_components/rinnai/devices/%s.json",
+                            device_id, device.get("name"), device_type, device_type,
+                        )
 
                 return True
         except (TimeoutError, aiohttp.ClientError) as err:
@@ -194,7 +202,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
                 response = await self._session.get(
                     url,
@@ -294,7 +302,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Bearer {self._token}"}
+                headers = {"Authorization": f"Basic {self._token}"}
                 
                 if method == "GET":
                     response = await self._session.get(url, params=final_params, headers=headers)
@@ -340,9 +348,12 @@ class RinnaiClient:
 
         self.device_states[device_id].update(state_data)
         
-        # Sync heatingReservationMode to byteStr if present
-        if "heatingReservationMode" in state_data:
-            self.device_states[device_id]["byteStr"] = state_data["heatingReservationMode"]
+        # Sync reservation mode fields to byteStr (G56/G55/G58 use heatingReservationMode,
+        # E-series water heaters use hotWaterReservationMode)
+        for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
+            if reservation_key in state_data:
+                self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                break
 
         # Notify callbacks
         if device_id in self._state_callbacks:
@@ -366,8 +377,10 @@ class RinnaiClient:
         topics = {
             "inf": MQTT_DEFINITIONS["topics"]["info"].format(mac=device_mac),
             "stg": MQTT_DEFINITIONS["topics"]["energy"].format(mac=device_mac),
+            "sys": MQTT_DEFINITIONS["topics"]["sys"].format(mac=device_mac),
+            "res": MQTT_DEFINITIONS["topics"]["res"].format(mac=device_mac),
         }
-        
+
         proto = MQTT_DEFINITIONS["protocol"]
 
         for topic_type, topic in topics.items():
@@ -375,7 +388,7 @@ class RinnaiClient:
             def message_received(msg, topic_type=topic_type, device_id=device_id):
                 try:
                     payload = json.loads(msg.payload)
-                    
+
                     if topic_type == "inf" and payload.get("enl"):
                         if payload.get("code") == proto["reservation_code"]:
                             state_data = self._process_reservation_info(payload)
@@ -384,11 +397,31 @@ class RinnaiClient:
                         
                         if state_data:
                             self._handle_state_update(device_id, state_data)
-                    elif (topic_type == "stg" and payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]):
-                        state_data = self._process_energy_data(payload, device_id)
-                        if state_data:
-                            self._handle_state_update(device_id, state_data)
-                            
+                    elif topic_type == "stg":
+                        if payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]:
+                            state_data = self._process_energy_data(payload, device_id)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+                    elif topic_type == "sys":
+                        ptn = payload.get("ptn")
+                        if ptn == proto["online_pattern"]:
+                            # Device online/offline notification
+                            is_online = payload.get("online") == "1"
+                            _LOGGER.debug(
+                                "Device %s online status: %s", device_id, is_online
+                            )
+                            self._handle_state_update(
+                                device_id, {"_online": is_online}
+                            )
+                        elif ptn == proto["heartbeat_pattern"]:
+                            _LOGGER.debug("Heartbeat received for device %s", device_id)
+                    elif topic_type == "res":
+                        # Response to an active get/ query (same ENL format as inf/)
+                        if payload.get("enl"):
+                            state_data = self._process_device_info(payload)
+                            if state_data:
+                                self._handle_state_update(device_id, state_data)
+
                 except Exception as err:
                     _LOGGER.error("Error processing MQTT message: %s", err)
 
