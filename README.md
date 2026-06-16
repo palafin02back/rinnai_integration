@@ -1,4 +1,4 @@
-# 林内 (Rinnai) Home Assistant 集成
+# 林内 (Rinnai) Home Assistant 集成（最新更新同步app版本3.9了，之前因为app本本过低HA不识别实体）
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/release/palafin02back/rinnai_integration.svg)](https://github.com/palafin02back/rinnai_integration/releases)
