@@ -1,6 +1,7 @@
 """Support for Rinnai water heater."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -16,6 +17,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
+from .relative_temperature import (
+    async_set_relative_temperature,
+    current_temperature,
+    resolve_target_temperature,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,16 +63,27 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         self._attr_max_temp = config["max_temp"]
         self._attr_target_temperature_step = config["step"]
         
-        self._command_topic = config["command_topic"]
         self._state_attribute = config["state_attribute"]
+        self._relative_temperature_control = config.get("relative_temperature_control")
+        self._command_topic = config.get("command_topic")
+        # Standard devices still require command_topic. Relative control is an
+        # explicit opt-in for devices that can only step temperature up/down.
+        if not self._relative_temperature_control and not self._command_topic:
+            raise KeyError("command_topic")
         # "hex2" → 2-char (G56 style: 40°C → "28")
         # "hex4" → 4-char (E-series style: 40°C → "2800")
         self._temp_format = config.get("temp_format", "hex2")
         
         # Operation mode name from config, default to "Hot Water" if not specified (display only)
-        operation_mode = config.get("operation_mode", "Hot Water")
-        self._attr_operation_list = [operation_mode]
-        self._attr_current_operation = operation_mode
+        self._operation_mode = config.get("operation_mode", "Hot Water")
+        self._changing_operation_template = config.get("changing_operation_template")
+        self._temperature_notice_attribute = config.get(
+            "temperature_notice_attribute", "温度提示"
+        )
+        self._attr_operation_list = [self._operation_mode]
+        self._attr_current_operation = self._operation_mode
+        if self._relative_temperature_control:
+            self._attr_extra_state_attributes = {}
 
         self._update_attributes()
 
@@ -110,6 +127,10 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
             )
             return
 
+        if self._relative_temperature_control:
+            await self._async_set_relative_temperature(temperature)
+            return
+
         hex_temperature = hex(temperature)[2:].upper().zfill(2)
         if self._temp_format == "hex4":
             hex_temperature = hex_temperature + "00"
@@ -120,3 +141,117 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         if success:
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()
+
+    async def _async_set_relative_temperature(self, temperature: int) -> None:
+        """Set target temperature via configured relative up/down commands."""
+        control = self._relative_temperature_control or {}
+        target = resolve_target_temperature(
+            self._device_id,
+            temperature,
+            control,
+            self.get_state_value,
+        )
+        if target.target is None:
+            return
+
+        if target.adjusted:
+            self._set_temperature_notice(target.requested, target.target)
+        else:
+            self._clear_temperature_notice()
+
+        if current_temperature(self._state_attribute, self.get_state_value) == target.target:
+            return
+
+        self._set_changing_operation(target.target)
+        try:
+            result = await async_set_relative_temperature(
+                device_id=self._device_id,
+                target_temperature=target.target,
+                state_attribute=self._state_attribute,
+                control=control,
+                allowed_temps=target.allowed_temps,
+                get_state_value=self.get_state_value,
+                send_command=self._async_send_relative_temperature_command,
+                refresh_state=self._async_refresh_after_relative_temperature_step,
+            )
+            if result.reached_target:
+                self._attr_target_temperature = float(target.target)
+                self.async_write_ha_state()
+        finally:
+            self._restore_operation()
+
+    def _set_changing_operation(self, temperature: int) -> None:
+        """Show a configured in-progress operation while relative control runs."""
+        if not self._changing_operation_template:
+            return
+
+        operation = self._changing_operation_template.format(temperature=temperature)
+        self._set_current_operation(operation)
+
+    def _set_temperature_notice(self, requested: int, temperature: int) -> None:
+        """Show that an unsupported target was adjusted to a supported value."""
+        control = self._relative_temperature_control or {}
+        template = control.get(
+            "unsupported_temperature_template",
+            "Unsupported {requested}C; using nearest supported {temperature}C",
+        )
+        notice = template.format(requested=requested, temperature=temperature)
+        self._attr_extra_state_attributes = {
+            self._temperature_notice_attribute: notice,
+        }
+        self._set_current_operation(notice)
+
+    def _clear_temperature_notice(self) -> None:
+        """Clear the last unsupported-temperature notice if present."""
+        if not self._attr_extra_state_attributes:
+            return
+
+        self._attr_extra_state_attributes = {}
+        if self._attr_current_operation != self._operation_mode:
+            self._set_current_operation(self._operation_mode)
+            return
+
+        self.async_write_ha_state()
+
+    def _restore_operation(self) -> None:
+        """Restore the configured normal operation label."""
+        if self._attr_current_operation == self._operation_mode:
+            return
+
+        self._set_current_operation(self._operation_mode)
+
+    def _set_current_operation(self, operation: str) -> None:
+        """Update the operation label shown by Home Assistant."""
+        self._attr_operation_list = [self._operation_mode]
+        if operation != self._operation_mode:
+            self._attr_operation_list.append(operation)
+        self._attr_current_operation = operation
+        self.async_write_ha_state()
+
+    async def _async_send_relative_temperature_command(
+        self,
+        command: dict[str, Any],
+    ) -> bool:
+        """Send one relative temperature command."""
+        return await self.coordinator.async_send_command(self._device_id, command)
+
+    async def _async_refresh_after_relative_temperature_step(self) -> None:
+        """Refresh state after a relative temperature command when possible."""
+        control = self._relative_temperature_control or {}
+        try:
+            delay = float(control.get("step_delay_seconds", 0))
+        except (ValueError, TypeError):
+            delay = 0
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        refresh_device_state = getattr(self.coordinator, "async_refresh_device_state", None)
+        if refresh_device_state:
+            if await refresh_device_state(self._device_id):
+                self._update_attributes()
+                return
+
+        refresh = getattr(self.coordinator, "async_request_refresh", None)
+        if refresh:
+            await refresh()
+        self._update_attributes()
