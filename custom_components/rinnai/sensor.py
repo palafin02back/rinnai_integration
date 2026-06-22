@@ -100,6 +100,11 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         self.entity_description = description
         self._value_map = config.get("value_map")
         self._state_attribute = config.get("state_attribute")
+        self._fallback_state_attribute = config.get("fallback_state_attribute")
+        self._fallback_when = {
+            str(value)
+            for value in config.get("fallback_when", ["", "0", "00", "Error", "error"])
+        }
         self._restored_native_value = None
 
     async def async_added_to_hass(self) -> None:
@@ -129,7 +134,7 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         if not self._state_attribute:
             return
 
-        raw_value = self.get_state_value(self._state_attribute)
+        raw_value = self._state_value_with_fallback()
         
         if self._value_map and str(raw_value) in self._value_map:
             current_value = self._value_map[str(raw_value)]
@@ -142,6 +147,24 @@ class RinnaiGenericSensor(RinnaiEntity, SensorEntity, RestoreEntity):
         else:
              self._attr_native_value = current_value
 
+    def _state_value_with_fallback(self) -> Any:
+        """Return the configured state value, applying fallback when needed."""
+        raw_value = self.get_state_value(self._state_attribute)
+        if (
+            not self._fallback_state_attribute
+            or str(raw_value) not in self._fallback_when
+        ):
+            return raw_value
+
+        fallback_value = self.get_state_value(self._fallback_state_attribute)
+        if (
+            fallback_value is not None
+            and str(fallback_value) not in self._fallback_when
+        ):
+            return fallback_value
+
+        return raw_value
+
 
 class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
     """Representation of Rinnai heating reservation status."""
@@ -151,6 +174,10 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
         super().__init__(coordinator, device_id, config)
         self._attr_translation_key = "heating_reservation"
         self._state_attribute = config["state_attribute"]
+        self._on_label = config.get("on_label", "On")
+        self._off_label = config.get("off_label", "Off")
+        self._extra_state_attributes = config.get("extra_state_attributes", {})
+        self._update_attributes()
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -165,17 +192,19 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
         
         if not self.schedule_manager.validate_hex(raw_hex):
             self._attr_native_value = "Unknown"
+            self._attr_extra_state_attributes = dict(self._extra_state_attributes)
             return
 
         is_on = self.schedule_manager.parse_status(raw_hex)
         mode_index = self.schedule_manager.parse_mode_index(raw_hex)
         
-        self._attr_native_value = "On" if is_on else "Off"
+        self._attr_native_value = self._on_label if is_on else self._off_label
         
-        attrs = {
+        attrs = dict(self._extra_state_attributes)
+        attrs.update({
             "current_mode_index": mode_index,
             "raw_hex": raw_hex
-        }
+        })
         
         # Parse modes using manager
         for i in range(self.schedule_manager.mode_count):

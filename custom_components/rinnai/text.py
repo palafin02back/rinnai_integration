@@ -47,6 +47,8 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         self._mode_index = config.get("mode_index")
         self._state_attribute = config.get("state_attribute")
         self._attr_native_value = "Unknown"
+        if extra_state_attributes := config.get("extra_state_attributes"):
+            self._attr_extra_state_attributes = dict(extra_state_attributes)
         self._update_attributes()
 
     @callback

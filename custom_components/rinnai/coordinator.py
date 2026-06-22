@@ -229,6 +229,17 @@ class RinnaiCoordinator(DataUpdateCoordinator):
 
         return result
 
+    async def async_refresh_device_state(self, device_id: str) -> bool:
+        """Force an immediate HTTP state refresh for one device."""
+        if not await self.client.fetch_device_state(device_id):
+            _LOGGER.warning("Failed to refresh state for device: %s", device_id)
+            return False
+
+        self._last_http_update[device_id] = time.time()
+        self._process_device_states()
+        self.async_set_updated_data(self.data)
+        return True
+
     async def async_refresh_schedule(self, device_id: str) -> None:
         """Refresh schedule info for a device."""
         _LOGGER.debug("Refreshing schedule info for device: %s", device_id)

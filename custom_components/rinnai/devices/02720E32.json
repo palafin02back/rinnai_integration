@@ -1,0 +1,406 @@
+{
+    "name": "RUS-R**E32 系列燃气热水器",
+    "features": {
+        "heat_type": "E32_HOT_WATER",
+        "energy_data_keys": [
+            "gasConsumption",
+            "hotWaterBurningTimes"
+        ]
+    },
+    "supported_requests": [
+        "get_schedule",
+        "save_schedule",
+        "air_consumption",
+        "gas_water_consumption"
+    ],
+    "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 1
+    },
+    "processors": {
+        "hotWaterTempSetting": [
+            "hex_to_int"
+        ],
+        "childLock": [
+            "hex_to_int"
+        ],
+        "faucetNotCloseSign": [
+            "hex_to_int"
+        ],
+        "hotWaterUseableSign": [
+            "hex_to_int"
+        ],
+        "gasConsumption": [
+            "hex_to_int",
+            {
+                "func": "divide",
+                "args": [
+                    10000
+                ]
+            }
+        ],
+        "hotWaterBurningTimes": [
+            "hex_to_int"
+        ]
+    },
+    "state_mapping": {
+        "hot_water_temp": "hotWaterTempSetting",
+        "operation_mode": "operationMode",
+        "burning_state": "burningState",
+        "gas_usage": "gasConsumption",
+        "hot_water_burning_times": "hotWaterBurningTimes",
+        "fault_code": "faultCode",
+        "error_code": "errorCode",
+        "cycle_mode": "cycleModeSetting",
+        "cycle_insulation": "temporaryCycleInsulationSetting",
+        "child_lock": "childLock",
+        "faucet_not_close": "faucetNotCloseSign",
+        "hot_water_useable": "hotWaterUseableSign",
+        "byte_str": "byteStr",
+        "monthly_gas_consumption": "monthlyGasConsumption",
+        "yearly_gas_consumption": "yearlyGasConsumption",
+        "today_gas_consumption": "todayGasConsumption",
+        "yesterday_gas_consumption": "yesterdayGasConsumption"
+    },
+    "entities": {
+        "water_heater": [
+            {
+                "name": "设定温度",
+                "key": "main",
+                "min_temp": 35,
+                "max_temp": 60,
+                "step": 1,
+                "state_attribute": "hot_water_temp",
+                "operation_mode": "热水",
+                "changing_operation_template": "正在更改至{temperature}℃",
+                "temperature_notice_attribute": "温度提示",
+                "relative_temperature_control": {
+                    "command_key": "hotWaterTempOperate",
+                    "increase": "01",
+                    "decrease": "00",
+                    "step_delay_seconds": 2,
+                    "refresh_retries": 3,
+                    "adjust_unsupported_temperature": true,
+                    "unsupported_temperature_template": "不支持{requested}℃，已切换至最近支持的{temperature}℃",
+                    "mode_attribute": "operation_mode",
+                    "allowed_temps_by_mode": {
+                        "E0": [
+                            35,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45,
+                            46,
+                            47,
+                            48,
+                            50,
+                            55,
+                            60
+                        ],
+                        "A0": [
+                            35,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45,
+                            46,
+                            47,
+                            48,
+                            50,
+                            55,
+                            60
+                        ],
+                        "C1": [
+                            35,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42
+                        ],
+                        "81": [
+                            35,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42
+                        ],
+                        "90": [
+                            35,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45
+                        ],
+                        "20": []
+                    }
+                }
+            }
+        ],
+        "sensor": [
+            {
+                "key": "hot_water_temp",
+                "name": "热水设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "hot_water_temp"
+            },
+            {
+                "key": "hot_water_reservation",
+                "name": "热水预约状态",
+                "type": "reservation_sensor",
+                "state_attribute": "byte_str",
+                "on_label": "开启",
+                "off_label": "关闭",
+                "extra_state_attributes": {
+                    "说明": "E32 循环预约使用 byteStr 的 byte 0 作为开关，byte 2-4 作为 24 小时位图。",
+                    "格式": "预约时段使用 HH:MM-HH:MM，结束时间为排他边界。",
+                    "示例": "06:00-23:00 表示 6 点到 22 点这 17 个小时开启。"
+                }
+            },
+            {
+                "key": "burning_state",
+                "name": "燃烧状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "burning_state",
+                "value_map": {
+                    "0": "待机",
+                    "1": "待机",
+                    "30": "待机",
+                    "31": "加热水",
+                    "32": "燃烧",
+                    "33": "故障"
+                }
+            },
+            {
+                "key": "hot_water_useable",
+                "name": "热水供应中",
+                "entity_category": "diagnostic",
+                "state_attribute": "hot_water_useable",
+                "value_map": {
+                    "0": "否",
+                    "1": "是"
+                }
+            },
+            {
+                "key": "fault_code",
+                "name": "故障码",
+                "entity_category": "diagnostic",
+                "state_attribute": "fault_code",
+                "fallback_state_attribute": "error_code",
+                "fallback_when": [
+                    "",
+                    "0",
+                    "00",
+                    "Error",
+                    "error"
+                ]
+            },
+            {
+                "key": "child_lock",
+                "name": "童锁",
+                "entity_category": "diagnostic",
+                "state_attribute": "child_lock",
+                "value_map": {
+                    "0": "关闭",
+                    "1": "开启"
+                }
+            },
+            {
+                "key": "faucet_not_close",
+                "name": "水流状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "faucet_not_close",
+                "value_map": {
+                    "0": "关",
+                    "1": "开"
+                }
+            },
+            {
+                "key": "today_gas_consumption",
+                "name": "今日燃气用量",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "today_gas_consumption"
+            },
+            {
+                "key": "monthly_gas_consumption",
+                "name": "本月燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "monthly_gas_consumption"
+            },
+            {
+                "key": "yearly_gas_consumption",
+                "name": "本年燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "yearly_gas_consumption"
+            },
+            {
+                "key": "gas_usage",
+                "name": "总计燃气用量",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "gas_usage",
+                "experimental": true
+            },
+            {
+                "key": "hot_water_burning_times",
+                "name": "总计点火次数",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "次",
+                "entity_category": "diagnostic",
+                "state_attribute": "hot_water_burning_times",
+                "experimental": true
+            },
+            {
+                "key": "yesterday_gas_consumption",
+                "name": "昨日燃气用量",
+                "device_class": "gas",
+                "state_class": "total",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "yesterday_gas_consumption"
+            }
+        ],
+        "switch": [
+            {
+                "key": "power",
+                "name": "电源",
+                "type": "command_switch",
+                "command_key": "power",
+                "command_on": "01",
+                "command_off": "00",
+                "state_attribute": "operation_mode",
+                "on_values": [
+                    "E0",
+                    "A0",
+                    "C1",
+                    "81",
+                    "90"
+                ],
+                "off_values": [
+                    "20"
+                ]
+            },
+            {
+                "key": "cycle_insulation",
+                "name": "一键循环(1h)",
+                "type": "command_switch",
+                "command_key": "temporaryCycleInsulationSetting",
+                "command_on": "01",
+                "command_off": "00",
+                "state_attribute": "cycle_insulation",
+                "on_value": "01"
+            },
+            {
+                "key": "hot_water_reservation_switch",
+                "name": "循环预约",
+                "type": "reservation_switch",
+                "state_attribute": "byte_str"
+            }
+        ],
+        "select": [
+            {
+                "key": "cycle_mode",
+                "name": "循环模式",
+                "type": "command_select",
+                "command_key": "cycleModeSetting",
+                "state_attribute": "cycle_mode",
+                "options_map": {
+                    "标准": "00",
+                    "节能": "01",
+                    "舒适": "02"
+                },
+                "value_aliases": {
+                    "标准": [
+                        "0"
+                    ],
+                    "节能": [
+                        "1"
+                    ],
+                    "舒适": [
+                        "2"
+                    ]
+                }
+            },
+            {
+                "key": "operation_mode",
+                "name": "运行模式",
+                "type": "command_select",
+                "command_key": "operationMode",
+                "state_attribute": "operation_mode",
+                "options_map": {
+                    "普通": "E0",
+                    "厨房": "C1",
+                    "淋浴": "90"
+                },
+                "value_aliases": {
+                    "普通": [
+                        "A0"
+                    ],
+                    "厨房": [
+                        "81"
+                    ]
+                },
+                "option_commands": {
+                    "普通": {
+                        "regularMode": "01"
+                    },
+                    "厨房": {
+                        "kitchenMode": "01"
+                    },
+                    "淋浴": {
+                        "showerMode": "01"
+                    }
+                }
+            }
+        ],
+        "text": [
+            {
+                "key": "schedule_mode_1",
+                "name": "循环预约设置",
+                "mode_index": 1,
+                "command_type": "schedule_data",
+                "state_attribute": "byte_str",
+                "extra_state_attributes": {
+                    "说明": "按 24 小时位图保存循环预约；输入多个时间段时使用 / 分隔。",
+                    "格式": "HH:MM-HH:MM，例如 06:00-23:00。",
+                    "结束时间": "结束时间为排他边界，06:00-23:00 表示 6 点到 22 点开启。"
+                }
+            }
+        ]
+    }
+}
