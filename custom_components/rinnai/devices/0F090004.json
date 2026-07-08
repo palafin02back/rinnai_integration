@@ -1,0 +1,75 @@
+{
+    "_comment": "RTC-626系列 室内温控器（采暖炉配套）",
+    "name": "Rinnai Thermostat RTC-626",
+    "features": {
+        "heat_type": "THERMOSTAT",
+        "energy_data_keys": []
+    },
+    "supported_requests": [],
+    "processors": {
+        "roomTempSetting": [
+            "hex_to_int"
+        ],
+        "roomTemperature": [
+            "hex_to_int"
+        ]
+    },
+    "state_mapping": {
+        "room_temp_setting": "roomTempSetting",
+        "room_temperature": "roomTemperature",
+        "power": "power",
+        "fault_code": "faultCode",
+        "error_code": "errorCode"
+    },
+    "entities": {
+        "sensor": [
+            {
+                "key": "room_temperature",
+                "name": "室内温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "room_temperature"
+            },
+            {
+                "key": "room_temp_setting",
+                "name": "温度设定",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "room_temp_setting"
+            },
+            {
+                "key": "fault_code",
+                "name": "故障码",
+                "entity_category": "diagnostic",
+                "state_attribute": "fault_code"
+            }
+        ],
+        "switch": [
+            {
+                "key": "power",
+                "name": "温控器开关",
+                "type": "command_switch",
+                "command_key": "power",
+                "command_on": "01",
+                "command_off": "00",
+                "state_attribute": "power",
+                "on_value": "01"
+            }
+        ],
+        "number": [
+            {
+                "key": "room_temp_setpoint",
+                "name": "室内温度设定",
+                "command_key": "roomTempSetting",
+                "state_attribute": "room_temp_setting",
+                "min": 5,
+                "max": 35,
+                "step": 1,
+                "unit_of_measurement": "°C",
+                "temp_format": "hex2"
+            }
+        ]
+    }
+}
