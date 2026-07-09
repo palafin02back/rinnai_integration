@@ -1,0 +1,87 @@
+{
+    "_comment": "RWTS-**软水系列 净水软水器",
+    "name": "Rinnai Water Softener",
+    "features": {
+        "heat_type": "WATER_SOFTENER",
+        "energy_data_keys": []
+    },
+    "supported_requests": [],
+    "processors": {},
+    "state_mapping": {
+        "work_mode": "workMode",
+        "salt_level": "saltLevel",
+        "water_hardness": "waterHardness",
+        "regen_count": "regenCount",
+        "salt_alarm": "saltAlarm",
+        "water_velocity": "waterVelocity",
+        "fault_code": "faultCode",
+        "error_code": "errorCode"
+    },
+    "entities": {
+        "sensor": [
+            {
+                "key": "work_mode",
+                "name": "工作状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "work_mode",
+                "value_map": {
+                    "0": "Working",
+                    "1": "Regenerating",
+                    "2": "Error",
+                    "3": "Off"
+                }
+            },
+            {
+                "key": "salt_level",
+                "name": "盐量",
+                "entity_category": "diagnostic",
+                "state_attribute": "salt_level"
+            },
+            {
+                "key": "water_hardness",
+                "name": "水硬度",
+                "entity_category": "diagnostic",
+                "state_attribute": "water_hardness"
+            },
+            {
+                "key": "regen_count",
+                "name": "再生次数",
+                "state_class": "total_increasing",
+                "entity_category": "diagnostic",
+                "state_attribute": "regen_count"
+            },
+            {
+                "key": "salt_alarm",
+                "name": "盐量低报警",
+                "entity_category": "diagnostic",
+                "state_attribute": "salt_alarm",
+                "value_map": {
+                    "0": "Normal",
+                    "1": "Low Salt"
+                }
+            },
+            {
+                "key": "water_velocity",
+                "name": "出水流量",
+                "entity_category": "diagnostic",
+                "state_attribute": "water_velocity"
+            },
+            {
+                "key": "fault_code",
+                "name": "故障码",
+                "entity_category": "diagnostic",
+                "state_attribute": "fault_code"
+            }
+        ],
+        "switch": [
+            {
+                "key": "force_regen",
+                "name": "立即再生",
+                "type": "command_switch",
+                "command_key": "forceRegen",
+                "command_on": "01",
+                "command_off": "00"
+            }
+        ]
+    }
+}
