@@ -36,6 +36,14 @@ ENTITY_CATEGORY_CONFIG: Final = "config"
 HOST: Final = "https://iot.rinnai.com.cn/app"
 BASE_URL: Final = HOST
 
+# The API gateway rejects aiohttp's default User-Agent with a HTML response.
+# Keep these values aligned with the current Rinnai Smart Home app.
+APP_VERSION: Final = "3.10.0"
+APP_USER_AGENT: Final = (
+    f"lin nei zhi jia/{APP_VERSION} (iPhone; iOS 27.0; Scale/3.00)"
+)
+API_HEADERS: Final = {"User-Agent": APP_USER_AGENT}
+
 # Rinnai Smart Home app built-in accessKey
 AK: Final = "A39C66706B83CCF0C0EE3CB23A39454D"
 REFESH_TIME: Final = 86400  # 24 hours
@@ -287,6 +295,5 @@ MQTT_DEFINITIONS: Final = {
         "heartbeat_pattern": "JA4",
     }
 }
-
 
 
