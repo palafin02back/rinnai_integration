@@ -14,7 +14,15 @@ import aiohttp
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from ..const import AK, REFESH_TIME, BASE_URL, API_DEFINITIONS, MQTT_DEFINITIONS
+from ..const import (
+    AK,
+    API_DEFINITIONS,
+    API_HEADERS,
+    APP_VERSION,
+    BASE_URL,
+    MQTT_DEFINITIONS,
+    REFESH_TIME,
+)
 from .config_manager import config_manager
 from .mqtt_client import RinnaiMQTTClient
 
@@ -64,6 +72,13 @@ class RinnaiClient:
 
         # Track initialization status
         self._initialized = False
+
+    def _http_headers(self, *, authenticated: bool = False) -> dict[str, str]:
+        """Build headers accepted by the Rinnai API gateway."""
+        headers = dict(API_HEADERS)
+        if authenticated:
+            headers["Authorization"] = f"Basic {self._token}"
+        return headers
 
     def register_callback(
         self, device_id: str, callback_func: Callable[[dict[str, Any]], None]
@@ -120,7 +135,7 @@ class RinnaiClient:
                         "password": self.password_hash,
                         "accessKey": AK,
                         "appType": "2",
-                        "appVersion": "3.9.0",
+                        "appVersion": APP_VERSION,
                         "identityLevel": "0",
                     }
 
@@ -128,7 +143,7 @@ class RinnaiClient:
                     response = await self._session.get(
                         url,
                         params=login_data,
-                        headers={"Content-Type": "application/json"},
+                        headers=self._http_headers(),
                     )
 
                     resp_json = await response.json()
@@ -142,6 +157,19 @@ class RinnaiClient:
                     self._token = resp_json.get("data", {}).get("token")
                     self._last_login_time = time.time()
                     return True
+            except aiohttp.ContentTypeError as err:
+                content_type = (
+                    err.headers.get("Content-Type", "unknown")
+                    if err.headers
+                    else "unknown"
+                )
+                _LOGGER.error(
+                    "Rinnai API returned a non-JSON login response "
+                    "(status=%s, content_type=%s)",
+                    err.status,
+                    content_type,
+                )
+                return False
             except (TimeoutError, aiohttp.ClientError) as err:
                 _LOGGER.error("Error connecting to Rinnai API: %s", err)
                 return False
@@ -153,7 +181,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Basic {self._token}"}
+                headers = self._http_headers(authenticated=True)
                 url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
                 response = await self._session.get(url, headers=headers)
                 resp_json = await response.json()
@@ -202,7 +230,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Basic {self._token}"}
+                headers = self._http_headers(authenticated=True)
                 url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
                 response = await self._session.get(
                     url,
@@ -302,7 +330,7 @@ class RinnaiClient:
 
         try:
             async with asyncio.timeout(self.connect_timeout):
-                headers = {"Authorization": f"Basic {self._token}"}
+                headers = self._http_headers(authenticated=True)
                 
                 if method == "GET":
                     response = await self._session.get(url, params=final_params, headers=headers)
