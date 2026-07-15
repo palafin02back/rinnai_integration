@@ -567,19 +567,35 @@ async def test_e32_cycle_mode_uses_raw_string_values(
     assert coordinator.commands == [{"cycleModeSetting": "02"}]
 
 
-def test_value_aliases_display_current_option(entity_modules: SimpleNamespace) -> None:
+@pytest.mark.parametrize(
+    ("raw_value", "expected_option"),
+    [
+        ("E0", "普通"),
+        ("A0", "普通"),
+        ("C1", "厨房"),
+        ("81", "厨房"),
+        ("C0", "厨房"),
+        ("90", "淋浴"),
+        ("D0", "淋浴"),
+    ],
+)
+def test_e32_operation_mode_maps_observed_values(
+    entity_modules: SimpleNamespace,
+    raw_value: str,
+    expected_option: str,
+) -> None:
     config = next(
         item
         for item in _e32_config()["entities"]["select"]
         if item["key"] == "operation_mode"
     )
     coordinator = StubCoordinator(
-        {"operationMode": "81"},
+        {"operationMode": raw_value},
         {"operation_mode": "operationMode"},
     )
     entity = entity_modules.select.RinnaiCommandSelect(coordinator, "dev1", config)
 
-    assert entity._attr_current_option == "厨房"
+    assert entity._attr_current_option == expected_option
 
 
 def test_e32_operation_mode_does_not_display_off_option(
@@ -632,18 +648,32 @@ def test_reservation_sensor_uses_localized_labels_and_notes(
     assert entity._attr_extra_state_attributes["说明"].startswith("E32 循环预约")
 
 
-def test_command_switch_matches_multiple_on_values(entity_modules: SimpleNamespace) -> None:
+@pytest.mark.parametrize(
+    "raw_value",
+    ["E0", "A0", "C1", "81", "C0", "90", "D0"],
+)
+def test_e32_power_matches_all_observed_on_values(
+    entity_modules: SimpleNamespace,
+    raw_value: str,
+) -> None:
     config = next(item for item in _e32_config()["entities"]["switch"] if item["key"] == "power")
     coordinator = StubCoordinator(
-        {"operationMode": "A0"},
+        {"operationMode": raw_value},
         {"operation_mode": "operationMode"},
     )
     entity = entity_modules.switch.RinnaiCommandSwitch(coordinator, "dev1", config)
 
     assert entity._attr_is_on is True
 
-    coordinator.state.raw_data["operationMode"] = "20"
-    entity._update_attributes()
+
+
+def test_e32_power_matches_off_value(entity_modules: SimpleNamespace) -> None:
+    config = next(item for item in _e32_config()["entities"]["switch"] if item["key"] == "power")
+    coordinator = StubCoordinator(
+        {"operationMode": "20"},
+        {"operation_mode": "operationMode"},
+    )
+    entity = entity_modules.switch.RinnaiCommandSwitch(coordinator, "dev1", config)
 
     assert entity._attr_is_on is False
 
@@ -674,8 +704,14 @@ def test_command_switch_default_on_value_behavior_unchanged(
     assert entity._attr_is_on is False
 
 
-def test_e32_cycle_insulation_matches_raw_string_values(
+@pytest.mark.parametrize(
+    ("raw_value", "expected_is_on"),
+    [("1", True), ("01", True), ("0", False), ("00", False)],
+)
+def test_e32_cycle_insulation_matches_observed_string_values(
     entity_modules: SimpleNamespace,
+    raw_value: str,
+    expected_is_on: bool,
 ) -> None:
     config = next(
         item
@@ -683,17 +719,31 @@ def test_e32_cycle_insulation_matches_raw_string_values(
         if item["key"] == "cycle_insulation"
     )
     coordinator = StubCoordinator(
-        {"temporaryCycleInsulationSetting": "01"},
+        {"temporaryCycleInsulationSetting": raw_value},
         {"cycle_insulation": "temporaryCycleInsulationSetting"},
     )
     entity = entity_modules.switch.RinnaiCommandSwitch(coordinator, "dev1", config)
 
-    assert entity._attr_is_on is True
+    assert entity._attr_is_on is expected_is_on
 
-    coordinator.state.raw_data["temporaryCycleInsulationSetting"] = "00"
-    entity._update_attributes()
 
-    assert entity._attr_is_on is False
+@pytest.mark.parametrize("raw_mode", ["C0", "D0"])
+@pytest.mark.asyncio
+async def test_e32_relative_temperature_accepts_observed_mode_aliases(
+    entity_modules: SimpleNamespace,
+    raw_mode: str,
+) -> None:
+    config = _e32_water_heater_config()
+    coordinator = StubCoordinator(
+        {"hotWaterTempSetting": 40, "operationMode": raw_mode},
+        {"hot_water_temp": "hotWaterTempSetting", "operation_mode": "operationMode"},
+    )
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(coordinator, "dev1", config)
+
+    await entity.async_set_temperature(temperature=41)
+
+    assert coordinator.commands == [{"hotWaterTempOperate": "01"}]
+    assert coordinator.state.raw_data["hotWaterTempSetting"] == 41
 
 
 def test_command_switch_can_use_off_values_without_on_values(

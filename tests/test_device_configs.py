@@ -487,14 +487,15 @@ class TestEntityPlatforms:
         assert power["command_on"] == "01"
         assert power["command_off"] == "00"
         assert power["state_attribute"] == "operation_mode"
-        assert power["on_values"] == ["E0", "A0", "C1", "81", "90"]
+        assert power["on_values"] == ["E0", "A0", "C1", "81", "C0", "90", "D0"]
         assert power["off_values"] == ["20"]
 
         cycle_insulation = switches["cycle_insulation"]
         assert cycle_insulation["command_key"] == "temporaryCycleInsulationSetting"
         assert cycle_insulation["command_on"] == "01"
         assert cycle_insulation["command_off"] == "00"
-        assert cycle_insulation["on_value"] == "01"
+        assert cycle_insulation["on_values"] == ["1", "01"]
+        assert cycle_insulation["off_values"] == ["0", "00"]
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_burning_state_maps_standby_codes(self, device_type):
@@ -516,11 +517,22 @@ class TestEntityPlatforms:
             "厨房": "C1",
             "淋浴": "90",
         }
+        assert operation_mode["value_aliases"] == {
+            "普通": ["A0"],
+            "厨房": ["81", "C0"],
+            "淋浴": ["D0"],
+        }
         assert "Off" not in operation_mode["options_map"]
         assert "关机" not in operation_mode["options_map"]
         assert operation_mode["option_commands"]["普通"] == {"regularMode": "01"}
         assert operation_mode["option_commands"]["厨房"] == {"kitchenMode": "01"}
         assert operation_mode["option_commands"]["淋浴"] == {"showerMode": "01"}
+
+        allowed_temps = d["entities"]["water_heater"][0][
+            "relative_temperature_control"
+        ]["allowed_temps_by_mode"]
+        assert allowed_temps["C0"] == allowed_temps["C1"] == allowed_temps["81"]
+        assert allowed_temps["D0"] == allowed_temps["90"]
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_cycle_mode_select_writes_hex_values(self, device_type):
