@@ -572,6 +572,7 @@ async def test_e32_cycle_mode_uses_raw_string_values(
     [
         ("E0", "普通"),
         ("A0", "普通"),
+        ("80", "普通"),
         ("C1", "厨房"),
         ("81", "厨房"),
         ("C0", "厨房"),
@@ -650,7 +651,7 @@ def test_reservation_sensor_uses_localized_labels_and_notes(
 
 @pytest.mark.parametrize(
     "raw_value",
-    ["E0", "A0", "C1", "81", "C0", "90", "D0"],
+    ["E0", "A0", "80", "C1", "81", "C0", "90", "D0"],
 )
 def test_e32_power_matches_all_observed_on_values(
     entity_modules: SimpleNamespace,
@@ -727,7 +728,7 @@ def test_e32_cycle_insulation_matches_observed_string_values(
     assert entity._attr_is_on is expected_is_on
 
 
-@pytest.mark.parametrize("raw_mode", ["C0", "D0"])
+@pytest.mark.parametrize("raw_mode", ["80", "C0", "D0"])
 @pytest.mark.asyncio
 async def test_e32_relative_temperature_accepts_observed_mode_aliases(
     entity_modules: SimpleNamespace,

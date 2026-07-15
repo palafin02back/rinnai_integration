@@ -487,7 +487,16 @@ class TestEntityPlatforms:
         assert power["command_on"] == "01"
         assert power["command_off"] == "00"
         assert power["state_attribute"] == "operation_mode"
-        assert power["on_values"] == ["E0", "A0", "C1", "81", "C0", "90", "D0"]
+        assert power["on_values"] == [
+            "E0",
+            "A0",
+            "80",
+            "C1",
+            "81",
+            "C0",
+            "90",
+            "D0",
+        ]
         assert power["off_values"] == ["20"]
 
         cycle_insulation = switches["cycle_insulation"]
@@ -518,9 +527,9 @@ class TestEntityPlatforms:
             "淋浴": "90",
         }
         assert operation_mode["value_aliases"] == {
-            "普通": ["A0"],
+            "普通": ["A0", "E0", "80"],
             "厨房": ["81", "C0"],
-            "淋浴": ["D0"],
+            "淋浴": ["90", "D0"],
         }
         assert "Off" not in operation_mode["options_map"]
         assert "关机" not in operation_mode["options_map"]
@@ -531,6 +540,7 @@ class TestEntityPlatforms:
         allowed_temps = d["entities"]["water_heater"][0][
             "relative_temperature_control"
         ]["allowed_temps_by_mode"]
+        assert allowed_temps["80"] == allowed_temps["E0"] == allowed_temps["A0"]
         assert allowed_temps["C0"] == allowed_temps["C1"] == allowed_temps["81"]
         assert allowed_temps["D0"] == allowed_temps["90"]
 
