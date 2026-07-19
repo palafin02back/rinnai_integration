@@ -58,11 +58,7 @@
         "pressurization_mode": "pressurizationMode",
         "fault_code": "faultCode",
         "error_code": "errorCode",
-        "byte_str": "byteStr",
-        "monthly_gas_consumption": "monthlyGasConsumption",
-        "yearly_gas_consumption": "yearlyGasConsumption",
-        "today_gas_consumption": "todayGasConsumption",
-        "yesterday_gas_consumption": "yesterdayGasConsumption"
+        "byte_str": "byteStr"
     },
     "entities": {
         "water_heater": [
@@ -75,6 +71,8 @@
                 "command_topic": "hotWaterTempSetting",
                 "temp_format": "hex4",
                 "state_attribute": "hot_water_temp",
+                "min_temp_attribute": "temp_setting_lower",
+                "max_temp_attribute": "temp_setting_upper",
                 "operation_mode": "Hot Water"
             }
         ],
@@ -151,53 +149,6 @@
                     "30": "Normal",
                     "31": "Frozen"
                 }
-            },
-            {
-                "key": "eco_heat_load",
-                "name": "节能档位",
-                "entity_category": "diagnostic",
-                "state_attribute": "eco_heat_load",
-                "value_map": {
-                    "5A": "General Energy Saving",
-                    "50": "Standard Energy Saving",
-                    "45": "Strong Energy Saving"
-                }
-            },
-            {
-                "key": "monthly_gas_consumption",
-                "name": "本月燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "monthly_gas_consumption"
-            },
-            {
-                "key": "yearly_gas_consumption",
-                "name": "本年燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "yearly_gas_consumption"
-            },
-            {
-                "key": "today_gas_consumption",
-                "name": "今日燃气用量",
-                "device_class": "gas",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "today_gas_consumption"
-            },
-            {
-                "key": "yesterday_gas_consumption",
-                "name": "昨日燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "yesterday_gas_consumption"
             }
         ],
         "switch": [
@@ -287,19 +238,36 @@
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
                 "options_map": {
-                    "普通": "0",
-                    "厨房": "1",
-                    "淋浴": "2"
+                    "普通模式": "0",
+                    "厨房模式": "1",
+                    "淋浴模式": "2"
                 },
                 "value_aliases": {
-                    "普通": [
+                    "普通模式": [
                         "00"
                     ],
-                    "厨房": [
+                    "厨房模式": [
                         "01"
                     ],
-                    "淋浴": [
+                    "淋浴模式": [
                         "02"
+                    ]
+                }
+            },
+            {
+                "key": "eco_heat_load",
+                "name": "节能档位",
+                "type": "command_select",
+                "command_key": "ecoHeatLoad",
+                "state_attribute": "eco_heat_load",
+                "options_map": {
+                    "一般节能": "5a",
+                    "标准节能": "50",
+                    "强力节能": "46"
+                },
+                "value_aliases": {
+                    "一般节能": [
+                        "5A"
                     ]
                 }
             }

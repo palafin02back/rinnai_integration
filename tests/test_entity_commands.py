@@ -293,6 +293,10 @@ def _e32_water_heater_config() -> dict[str, Any]:
     return config
 
 
+def _e51_water_heater_config() -> dict[str, Any]:
+    return json.loads(json.dumps(_e51_config()["entities"]["water_heater"][0]))
+
+
 @pytest.mark.asyncio
 async def test_relative_temperature_increases_one_step(entity_modules: SimpleNamespace) -> None:
     config = _e32_water_heater_config()
@@ -495,6 +499,47 @@ async def test_direct_temperature_path_unchanged_for_hex4(
 
 
 @pytest.mark.asyncio
+async def test_e51_water_heater_uses_dynamic_temperature_bounds(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = _e51_water_heater_config()
+    coordinator = StubCoordinator(
+        {
+            "hotWaterTempSetting": 40,
+            "tempSettinglower": 37,
+            "tempSettingUpper": 55,
+        },
+        {
+            "hot_water_temp": "hotWaterTempSetting",
+            "temp_setting_lower": "tempSettinglower",
+            "temp_setting_upper": "tempSettingUpper",
+        },
+    )
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
+        coordinator,
+        "dev1",
+        config,
+    )
+
+    assert entity.min_temp == 37
+    assert entity.max_temp == 55
+
+    coordinator.state.raw_data["tempSettinglower"] = 38
+    coordinator.state.raw_data["tempSettingUpper"] = 45
+    entity._update_attributes()
+
+    assert entity.min_temp == 38
+    assert entity.max_temp == 45
+
+    await entity.async_set_temperature(temperature=46)
+    await entity.async_set_temperature(temperature=37)
+    assert coordinator.commands == []
+
+    await entity.async_set_temperature(temperature=45)
+    assert coordinator.commands == [{"hotWaterTempSetting": "2D00"}]
+
+
+@pytest.mark.asyncio
 async def test_option_commands_can_send_different_command_keys(
     entity_modules: SimpleNamespace,
 ) -> None:
@@ -575,12 +620,12 @@ async def test_e32_cycle_mode_uses_raw_string_values(
 @pytest.mark.parametrize(
     ("raw_value", "expected_option"),
     [
-        ("0", "普通"),
-        ("00", "普通"),
-        ("1", "厨房"),
-        ("01", "厨房"),
-        ("2", "淋浴"),
-        ("02", "淋浴"),
+        ("0", "普通模式"),
+        ("00", "普通模式"),
+        ("1", "厨房模式"),
+        ("01", "厨房模式"),
+        ("2", "淋浴模式"),
+        ("02", "淋浴模式"),
     ],
 )
 def test_e51_operation_mode_maps_observed_values(
@@ -617,9 +662,57 @@ async def test_e51_operation_mode_sends_observed_raw_values(
     )
     entity = entity_modules.select.RinnaiCommandSelect(coordinator, "dev1", config)
 
-    await entity.async_select_option("厨房")
+    await entity.async_select_option("厨房模式")
 
     assert coordinator.commands == [{"operationMode": "1"}]
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected_option"),
+    [
+        ("5a", "一般节能"),
+        ("5A", "一般节能"),
+        ("50", "标准节能"),
+        ("46", "强力节能"),
+    ],
+)
+def test_e51_eco_heat_load_maps_observed_values(
+    entity_modules: SimpleNamespace,
+    raw_value: str,
+    expected_option: str,
+) -> None:
+    config = next(
+        item
+        for item in _e51_config()["entities"]["select"]
+        if item["key"] == "eco_heat_load"
+    )
+    coordinator = StubCoordinator(
+        {"ecoHeatLoad": raw_value},
+        {"eco_heat_load": "ecoHeatLoad"},
+    )
+    entity = entity_modules.select.RinnaiCommandSelect(coordinator, "dev1", config)
+
+    assert entity._attr_current_option == expected_option
+
+
+@pytest.mark.asyncio
+async def test_e51_eco_heat_load_sends_selected_value(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = next(
+        item
+        for item in _e51_config()["entities"]["select"]
+        if item["key"] == "eco_heat_load"
+    )
+    coordinator = StubCoordinator(
+        {"ecoHeatLoad": "50"},
+        {"eco_heat_load": "ecoHeatLoad"},
+    )
+    entity = entity_modules.select.RinnaiCommandSelect(coordinator, "dev1", config)
+
+    await entity.async_select_option("强力节能")
+
+    assert coordinator.commands == [{"ecoHeatLoad": "46"}]
 
 
 @pytest.mark.parametrize(
