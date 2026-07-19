@@ -103,10 +103,11 @@ class TestStateMappingConsistency:
         # boiler / water heater common
         "operationMode", "burningState", "byteStr",
         "heatingReservationMode", "hotWaterReservationMode",
-        "faultCode", "errorCode",
+        "faultCode", "errorCode", "errorType",
         # E-series extras
         "massageMode", "cycleModeSetting", "temporaryCycleInsulationSetting",
-        "cycleReservationSetting1",
+        "cycleReservationSetting1", "frozenState", "ecoHeatLoad",
+        "pressurizationMode",
         # water softener
         "workMode", "saltLevel", "saltLow", "saltAlarm",
         "waterHardness", "regenCount", "outWaterFlow",
@@ -784,6 +785,38 @@ class TestEndToEndStatePipeline:
         result = process_data(raw, d["processors"])
         assert result["hotWaterTempSetting"] == 42
         assert result["gasConsumption"] == pytest.approx(2.0)
+
+    def test_e51_observed_full_inf_payload(self):
+        """E51: observed J00 payload fields and hex4 temperature limits."""
+        d = load("0272000D")
+        raw = {
+            "burningState": "0",
+            "errorCode": "0",
+            "errorType": "0",
+            "hotWaterTempSetting": "3200",
+            "tempSettingUpper": "3c00",
+            "tempSettinglower": "2300",
+            "frozenState": "30",
+            "power": "31",
+            "ecoMode": "30",
+            "ecoHeatLoad": "46",
+            "temporaryCycleInsulationSetting": "30",
+            "cycleModeSetting": "1",
+            "pressurizationMode": "30",
+            "operationMode": "0",
+        }
+        result = process_data(raw, d["processors"])
+        assert result["hotWaterTempSetting"] == 50
+        assert result["tempSettingUpper"] == 60
+        assert result["tempSettinglower"] == 35
+        assert result["burningState"] == "0"
+        assert result["power"] == "31"
+        assert result["ecoMode"] == "30"
+        assert result["ecoHeatLoad"] == "46"
+        assert result["temporaryCycleInsulationSetting"] == "30"
+        assert result["cycleModeSetting"] == "1"
+        assert result["pressurizationMode"] == "30"
+        assert result["operationMode"] == "0"
 
     def test_e32_full_payload(self):
         """E32: hex2 temp, cycle fields, diagnostics, and energy fields."""

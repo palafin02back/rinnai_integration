@@ -25,6 +25,12 @@
         "hotWaterTempSetting": [
             "hex4_to_int"
         ],
+        "tempSettingUpper": [
+            "hex4_to_int"
+        ],
+        "tempSettinglower": [
+            "hex4_to_int"
+        ],
         "gasConsumption": [
             "hex_to_int",
             {
@@ -37,9 +43,19 @@
     },
     "state_mapping": {
         "hot_water_temp": "hotWaterTempSetting",
+        "temp_setting_upper": "tempSettingUpper",
+        "temp_setting_lower": "tempSettinglower",
         "operation_mode": "operationMode",
         "burning_state": "burningState",
         "gas_usage": "gasConsumption",
+        "error_type": "errorType",
+        "frozen_state": "frozenState",
+        "power": "power",
+        "eco_mode": "ecoMode",
+        "eco_heat_load": "ecoHeatLoad",
+        "cycle_mode": "cycleModeSetting",
+        "cycle_insulation": "temporaryCycleInsulationSetting",
+        "pressurization_mode": "pressurizationMode",
         "fault_code": "faultCode",
         "error_code": "errorCode",
         "byte_str": "byteStr",
@@ -72,11 +88,31 @@
                 "state_attribute": "hot_water_temp"
             },
             {
+                "key": "temp_setting_upper",
+                "name": "最高设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "entity_category": "diagnostic",
+                "state_attribute": "temp_setting_upper"
+            },
+            {
+                "key": "temp_setting_lower",
+                "name": "最低设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "entity_category": "diagnostic",
+                "state_attribute": "temp_setting_lower"
+            },
+            {
                 "key": "burning_state",
                 "name": "燃烧状态",
                 "entity_category": "diagnostic",
                 "state_attribute": "burning_state",
                 "value_map": {
+                    "0": "Standby",
+                    "1": "Burning",
                     "30": "Standby",
                     "31": "Heating Water",
                     "32": "Burning",
@@ -97,7 +133,35 @@
                 "key": "fault_code",
                 "name": "故障码",
                 "entity_category": "diagnostic",
-                "state_attribute": "fault_code"
+                "state_attribute": "fault_code",
+                "fallback_state_attribute": "error_code"
+            },
+            {
+                "key": "error_type",
+                "name": "错误类型",
+                "entity_category": "diagnostic",
+                "state_attribute": "error_type"
+            },
+            {
+                "key": "frozen_state",
+                "name": "冰冻状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "frozen_state",
+                "value_map": {
+                    "30": "Normal",
+                    "31": "Frozen"
+                }
+            },
+            {
+                "key": "eco_heat_load",
+                "name": "节能档位",
+                "entity_category": "diagnostic",
+                "state_attribute": "eco_heat_load",
+                "value_map": {
+                    "5A": "General Energy Saving",
+                    "50": "Standard Energy Saving",
+                    "45": "Strong Energy Saving"
+                }
             },
             {
                 "key": "monthly_gas_consumption",
@@ -136,6 +200,85 @@
                 "state_attribute": "yesterday_gas_consumption"
             }
         ],
+        "switch": [
+            {
+                "key": "power",
+                "name": "电源",
+                "type": "command_switch",
+                "command_key": "power",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "power",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
+            },
+            {
+                "key": "eco_mode",
+                "name": "节能开关",
+                "type": "command_switch",
+                "command_key": "ecoMode",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "eco_mode",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
+            },
+            {
+                "key": "cycle_insulation",
+                "name": "一键循环",
+                "type": "command_switch",
+                "command_key": "temporaryCycleInsulationSetting",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "cycle_insulation",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
+            },
+            {
+                "key": "cycle_mode",
+                "name": "循环预约",
+                "type": "command_switch",
+                "command_key": "cycleModeSetting",
+                "command_on": "1",
+                "command_off": "0",
+                "state_attribute": "cycle_mode",
+                "on_values": [
+                    "1",
+                    "01"
+                ],
+                "off_values": [
+                    "0",
+                    "00"
+                ]
+            },
+            {
+                "key": "pressurization_mode",
+                "name": "增压模式",
+                "type": "command_switch",
+                "command_key": "pressurizationMode",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "pressurization_mode",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
+            }
+        ],
         "select": [
             {
                 "key": "operation_mode",
@@ -144,9 +287,20 @@
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
                 "options_map": {
-                    "正常": "00",
-                    "冬季节能": "01",
-                    "自动": "02"
+                    "普通": "0",
+                    "厨房": "1",
+                    "淋浴": "2"
+                },
+                "value_aliases": {
+                    "普通": [
+                        "00"
+                    ],
+                    "厨房": [
+                        "01"
+                    ],
+                    "淋浴": [
+                        "02"
+                    ]
                 }
             }
         ]
