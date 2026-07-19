@@ -16,8 +16,7 @@
             "1": "0101DB446CDB006E4818C680017F80017F",
             "2": "0102DB446CDB006E4818C680017F80017F",
             "3": "0103DB446CDB006E4818C680017F80017F"
-        },
-        "dynamic_mqtt_code": true
+        }
     },
     "schedule_config": {
         "total_length": 34,

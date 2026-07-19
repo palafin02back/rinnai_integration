@@ -427,7 +427,7 @@ class RinnaiClient:
                         else:
                             config = self._device_configs.get(device_id)
                             dynamic_code = None
-                            if config and config.features.get("dynamic_mqtt_code"):
+                            if config:
                                 dynamic_code = normalize_dynamic_mqtt_code(
                                     code,
                                     {

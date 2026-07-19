@@ -47,7 +47,7 @@ def normalize_dynamic_mqtt_code(
     code: Any,
     reserved_codes: set[str],
 ) -> str | None:
-    """Validate an opt-in device command code learned from an info message."""
+    """Validate a device command code learned from an info message."""
     normalized = str(code).strip().upper()
     reserved = {str(item).strip().upper() for item in reserved_codes}
     if normalized in reserved:

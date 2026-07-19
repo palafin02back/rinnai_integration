@@ -109,7 +109,6 @@ def test_q85_schedule_shape_is_explicit() -> None:
     config = load_q85()
 
     assert config["features"]["heat_type"] == "Q85_HEAT_OVEN"
-    assert config["features"]["dynamic_mqtt_code"] is True
     assert config["schedule_config"] == {
         "total_length": 34,
         "status_byte_index": 0,
