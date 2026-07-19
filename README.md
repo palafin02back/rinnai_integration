@@ -1,6 +1,3 @@
-Friendly Reminder：
-HA的插件账号一定要是一个单独的账号，如果有任何手机登录相同账号，会导致HA插件段是不是被踢下线，燃烧状态轮询和按键状态都会有随机的掉线或不可用，研究了半天才发现。
-
 # 林内 (Rinnai) Home Assistant 集成（最新更新同步app版本3.9了，之前因为app版本过低HA不识别实体）
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
@@ -9,6 +6,8 @@ HA的插件账号一定要是一个单独的账号，如果有任何手机登录
 
 适用于 Home Assistant 的林内 (Rinnai) 采暖炉/热水器自定义集成组件。
 ---
+Friendly Reminder：
+HA的插件账号一定要是一个单独的账号，如果有任何手机登录相同账号，会导致HA插件段是不是被踢下线，燃烧状态轮询和按键状态都会有随机的掉线或不可用，研究了半天才发现。
 
 ## ⚠️ 重要风险警示
 
