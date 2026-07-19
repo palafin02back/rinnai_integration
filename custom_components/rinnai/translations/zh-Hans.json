@@ -1,0 +1,164 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "设备已经配置"
+        },
+        "error": {
+            "cannot_connect": "连接失败",
+            "invalid_auth": "身份验证无效",
+            "unknown": "意外错误"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "password": "密码",
+                    "username": "用户名"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "burning_state": {
+                "name": "燃烧状态",
+                "state": {
+                    "Standby": "待机",
+                    "Heating Water": "热水加热",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "burning_state_dhw": {
+                "name": "热水状态",
+                "state": {
+                    "Standby": "待机",
+                    "Heating Water": "热水中",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "burning_state_ch": {
+                "name": "采暖状态",
+                "state": {
+                    "Standby": "待机",
+                    "Heating Water": "热水中",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "gas_usage": {
+                "name": "当前燃气用量"
+            },
+            "hot_water_temp": {
+                "name": "生活热水设定温度"
+            },
+            "heating_temp_nm": {
+                "name": "采暖设定温度 (普通模式)"
+            },
+            "heating_temp_hes": {
+                "name": "采暖设定温度 (节能模式)"
+            },
+            "operation_mode": {
+                "name": "运行模式"
+            },
+            "supply_time": {
+                "name": "实际使用时间"
+            },
+            "total_power_supply_time": {
+                "name": "累计通电时间"
+            },
+            "total_heating_burning_time": {
+                "name": "采暖累计燃烧时间"
+            },
+            "total_hot_water_burning_time": {
+                "name": "热水累计燃烧时间"
+            },
+            "heating_burning_times": {
+                "name": "采暖点火次数"
+            },
+            "hot_water_burning_times": {
+                "name": "热水点火次数"
+            },
+            "heating_reservation": {
+                "name": "采暖预约状态"
+            }
+        },
+        "climate": {
+            "main": {
+                "name": "采暖控制",
+                "state": {
+                    "heat": "采暖",
+                    "off": "关闭"
+                },
+                "state_attributes": {
+                    "hvac_action": {
+                        "state": {
+                            "heating": "燃烧中",
+                            "idle": "待机",
+                            "off": ""
+                        }
+                    },
+                    "preset_mode": {
+                        "state": {
+                            "Normal Heating": "普通模式",
+                            "Heating Energy Saving": "节能模式",
+                            "Heating Outdoor": "户外模式",
+                            "Fast Heating": "快速采暖"
+                        }
+                    }
+                }
+            }
+        },
+        "switch": {
+            "heating_reservation": {
+                "name": "采暖预约开关"
+            }
+        },
+        "text": {
+            "schedule_mode_4": {
+                "name": "自定义1 设置"
+            },
+            "schedule_mode_5": {
+                "name": "自定义2 设置"
+            }
+        },
+        "select": {
+            "reservation_mode": {
+                "name": "预约模式选择",
+                "state": {
+                    "Mode 1": "标准型",
+                    "Mode 2": "上班族",
+                    "Mode 3": "节能型",
+                    "Mode 4": "自定义1",
+                    "Mode 5": "自定义2"
+                }
+            }
+        },
+        "water_heater": {
+            "main": {
+                "name": "热水器",
+                "state": {
+                    "Hot Water": "热水"
+                },
+                "state_attributes": {
+                    "operation_mode": {
+                        "state": {
+                            "Hot Water": "热水"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "connect_timeout": "连接超时（秒）",
+                    "update_interval": "更新间隔（秒）",
+                    "experimental_sensors": "启用实验性传感器（当前燃气用量、点火次数、燃烧时间、通电时间等）"
+                }
+            }
+        }
+    }
+}
