@@ -20,6 +20,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import CONF_EXPERIMENTAL_SENSORS, DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.entity_utils import get_hex_byte
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ async def async_setup_entry(
                 sensor_type = config.get("type", "generic")
                 if sensor_type == "reservation_sensor":
                     entities.append(RinnaiHeatingReservationSensor(coordinator, device_id, config))
+                elif sensor_type == "circulation_sensor":
+                    entities.append(RinnaiCirculationSensor(coordinator, device_id, config))
                 else:
                     entities.append(RinnaiGenericSensor(coordinator, device_id, config, experimental_enabled))
 
@@ -216,3 +219,39 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
                     attrs["current_schedule"] = schedule_str
         
         self._attr_extra_state_attributes = attrs
+
+
+class RinnaiCirculationSensor(RinnaiEntity, SensorEntity):
+    """Expose a circulation state encoded in one operation-mode byte."""
+
+    def __init__(
+        self,
+        coordinator: RinnaiCoordinator,
+        device_id: str,
+        config: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator, device_id, config)
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Active", "Inactive", "Unknown"]
+        self._state_attribute = config["state_attribute"]
+        self._byte_index = int(config.get("byte_index", 2))
+        self._on_value = str(config.get("on_value", "0C")).upper()
+        self._update_attributes()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    def _update_attributes(self) -> None:
+        raw_value = self.get_state_value(self._state_attribute)
+        byte_value = get_hex_byte(raw_value, self._byte_index)
+        if byte_value is None:
+            self._attr_native_value = "Unknown"
+        else:
+            self._attr_native_value = (
+                "Active" if byte_value == self._on_value else "Inactive"
+            )
+        self._attr_extra_state_attributes = {
+            "raw_operation_mode": raw_value,
+        }

@@ -18,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .entity import RinnaiEntity
-from .core.entity_utils import execute_transition
+from .core.entity_utils import execute_transition, resolve_mode_code
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         self._mode_codes = config["mode_codes"]
         self._temp_settings = config["temp_settings"]
         self._active_states = config["active_states"]
+        self._mode_match = config.get("mode_match", "exact")
         
         # Defaults config
         defaults = config.get("defaults", {})
@@ -95,9 +96,8 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
 
     def _get_mode_from_code(self, code: str) -> str:
         """Resolve mode key from operation mode code."""
-        for mode_key, codes in self._mode_codes.items():
-            if code in codes:
-                return mode_key
+        if mode_key := resolve_mode_code(code, self._mode_codes, self._mode_match):
+            return mode_key
         _LOGGER.debug(
             "Device %s: unknown operation mode code '%s', defaulting to '%s'",
             self._device_id, code, self._off_mode,

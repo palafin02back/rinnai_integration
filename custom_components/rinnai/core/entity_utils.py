@@ -10,6 +10,52 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def resolve_mode_code(
+    code: Any,
+    mode_codes: dict[str, list[str]],
+    match: str = "exact",
+) -> str | None:
+    """Resolve a raw operation-mode value without changing legacy matching."""
+    normalized = str(code).upper()
+    for mode_key, configured_codes in mode_codes.items():
+        candidates = [str(item).upper() for item in configured_codes]
+        if match == "prefix":
+            if any(candidate and normalized.startswith(candidate) for candidate in candidates):
+                return mode_key
+        elif normalized in candidates:
+            return mode_key
+    return None
+
+
+def get_hex_byte(value: Any, byte_index: int) -> str | None:
+    """Return one byte from an even-length hexadecimal state value."""
+    if byte_index < 0:
+        return None
+    normalized = str(value).strip().upper()
+    if normalized.startswith("0X"):
+        normalized = normalized[2:]
+    if len(normalized) % 2 or any(char not in "0123456789ABCDEF" for char in normalized):
+        return None
+    start = byte_index * 2
+    if len(normalized) < start + 2:
+        return None
+    return normalized[start : start + 2]
+
+
+def normalize_dynamic_mqtt_code(
+    code: Any,
+    reserved_codes: set[str],
+) -> str | None:
+    """Validate an opt-in device command code learned from an info message."""
+    normalized = str(code).strip().upper()
+    reserved = {str(item).strip().upper() for item in reserved_codes}
+    if normalized in reserved:
+        return None
+    if len(normalized) != 4 or any(char not in "0123456789ABCDEF" for char in normalized):
+        return None
+    return normalized
+
 def get_state_value(device_state: Any, attribute_key: str, mapping: dict[str, str] | None = None) -> Any:
     """
     Get value from device state using mapping.
