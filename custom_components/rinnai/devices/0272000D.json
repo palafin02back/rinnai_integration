@@ -47,7 +47,6 @@
         "temp_setting_lower": "tempSettinglower",
         "operation_mode": "operationMode",
         "burning_state": "burningState",
-        "gas_usage": "gasConsumption",
         "error_type": "errorType",
         "frozen_state": "frozenState",
         "power": "power",
@@ -116,16 +115,6 @@
                     "32": "Burning",
                     "33": "Error"
                 }
-            },
-            {
-                "key": "gas_usage",
-                "name": "当前燃气用量",
-                "device_class": "gas",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "gas_usage",
-                "experimental": true
             },
             {
                 "key": "fault_code",
