@@ -35,17 +35,9 @@ class RinnaiMQTTClient:
         self._connect_lock = asyncio.Lock()
         self._reconnect_task: asyncio.Task | None = None
         self._reconnect_attempt = 0
+        self._tls_configured = False
 
         self.client.username_pw_set(self.username, self.password)
-        self.hass.async_add_executor_job(
-            self.client.tls_set,
-            None,  # ca_certs
-            None,  # certfile
-            None,  # keyfile
-            ssl.CERT_NONE,  # cert_reqs
-            ssl.PROTOCOL_TLSv1_2,  # tls_version
-            None,  # ciphers
-        )
 
         _LOGGER.debug(
             "MQTT client initialized with host=%s, port=%s, username=%s, client_id=%s",
@@ -53,6 +45,17 @@ class RinnaiMQTTClient:
             RINNAI_PORT,
             self.username,
             self.client_id,
+        )
+
+    def _configure_tls(self) -> None:
+        """Configure TLS on the paho client (blocking, run in executor)."""
+        self.client.tls_set(
+            ca_certs=None,
+            certfile=None,
+            keyfile=None,
+            cert_reqs=ssl.CERT_NONE,
+            tls_version=ssl.PROTOCOL_TLSv1_2,
+            ciphers=None,
         )
 
     async def async_connect(self) -> bool:
@@ -66,8 +69,8 @@ class RinnaiMQTTClient:
                 _LOGGER.debug("Connected to Rinnai MQTT broker with result code %s", rc)
                 if rc == 0:
                     self.connected = True
-                    for topic in self._subscribes:
-                        client.subscribe(topic)
+                    for topic, (_, qos) in self._subscribes.items():
+                        client.subscribe(topic, qos)
                     _LOGGER.info("MQTT client connected successfully")
                 else:
                     _LOGGER.error(
@@ -102,6 +105,10 @@ class RinnaiMQTTClient:
             self.client.on_message = on_message
 
             try:
+                if not self._tls_configured:
+                    await self.hass.async_add_executor_job(self._configure_tls)
+                    self._tls_configured = True
+
                 _LOGGER.info(
                     "Connecting to MQTT broker at %s:%s", RINNAI_HOST, RINNAI_PORT
                 )
@@ -121,7 +128,12 @@ class RinnaiMQTTClient:
 
             except Exception as err:
                 _LOGGER.error("Error connecting to Rinnai MQTT broker: %s", err)
+                self._schedule_reconnect()
                 return False
+            if not self.connected:
+                # Initial connect failed without a disconnect event; keep
+                # retrying in the background so subscriptions recover.
+                self._schedule_reconnect()
             return self.connected
 
     def _schedule_reconnect(self) -> None:
@@ -149,9 +161,15 @@ class RinnaiMQTTClient:
                     if self.connected:
                         self._reconnect_attempt = 0
                         return
+                    if not self._tls_configured:
+                        await self.hass.async_add_executor_job(self._configure_tls)
+                        self._tls_configured = True
+                    # Full connect (not reconnect): also covers the case where
+                    # the initial connect never succeeded.
                     await self.hass.async_add_executor_job(
-                        self.client.reconnect
+                        self.client.connect, RINNAI_HOST, RINNAI_PORT, 60
                     )
+                    self.client.loop_start()
                     # Wait for on_connect to fire
                     for _ in range(10):
                         if self.connected:
@@ -197,20 +215,28 @@ class RinnaiMQTTClient:
     async def async_subscribe(
         self, topic: str, callback_func: Callable[[Any], None], qos: int = 0
     ) -> Callable[[], None]:
-        """Subscribe to a topic with a callback."""
-        if not self.connected:
-            if not await self.async_connect():
-                _LOGGER.error("Cannot subscribe to topic: MQTT client not connected")
-                return lambda: None
+        """Subscribe to a topic with a callback.
 
+        The subscription is always registered; if the broker is not connected
+        yet, it is activated by on_connect once the connection (or a background
+        reconnect) succeeds.
+        """
         self._subscribes[topic] = (callback_func, qos)
         _LOGGER.info("Subscribing to topic %s with QoS %s", topic, qos)
 
-        try:
-            await self.hass.async_add_executor_job(self.client.subscribe, topic, qos)
-        except Exception as err:
-            _LOGGER.error("Error subscribing to topic %s: %s", topic, err)
-            return lambda: None
+        if self.connected:
+            try:
+                await self.hass.async_add_executor_job(
+                    self.client.subscribe, topic, qos
+                )
+            except Exception as err:
+                # Keep the registration: on_connect re-subscribes after the
+                # next (re)connect.
+                _LOGGER.error("Error subscribing to topic %s: %s", topic, err)
+        else:
+            _LOGGER.debug(
+                "MQTT not connected; topic %s will be subscribed on connect", topic
+            )
 
         @callback
         def _unsub_callback():

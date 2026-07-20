@@ -84,6 +84,15 @@ class RinnaiClient:
             headers["Authorization"] = f"Basic {self._token}"
         return headers
 
+    def _invalidate_token(self) -> None:
+        """Drop the cached token so the next login() re-authenticates.
+
+        The API does not distinguish auth failures from other errors, and a
+        server-side-invalidated token would otherwise be reused for up to
+        REFESH_TIME (24 h). An extra login per failed cycle is cheap.
+        """
+        self._token = None
+
     def register_callback(
         self, device_id: str, callback_func: Callable[[dict[str, Any]], None]
     ) -> Callable[[], None]:
@@ -195,6 +204,7 @@ class RinnaiClient:
                         "Failed to get devices: %s",
                         resp_json.get("msg", "Unknown error"),
                     )
+                    self._invalidate_token()
                     return False
 
                 devices_list = resp_json.get("data", {}).get("list", [])
@@ -249,13 +259,14 @@ class RinnaiClient:
                         device_id,
                         resp_json.get("msg", "Unknown error"),
                     )
+                    self._invalidate_token()
                     return False
 
                 self.device_states[device_id] = resp_json.get("data", {})
                 return True
 
         except (TimeoutError, aiohttp.ClientError) as err:
-            _LOGGER.error("Error setting parameter: %s", err)
+            _LOGGER.error("Error fetching state for device %s: %s", device_id, err)
             return False
 
     async def perform_request(self, device_id: str, request_name: str, **kwargs) -> dict[str, Any] | bool | None:
@@ -396,10 +407,18 @@ class RinnaiClient:
                     _LOGGER.error("Error in state callback for device %s: %s", device_id, err)
 
     async def _setup_mqtt_for_device(self, device_id: str) -> None:
-        """Set up MQTT subscriptions for a device."""
+        """Set up MQTT subscriptions for a device.
+
+        Subscriptions are registered even when the broker is unreachable —
+        the MQTT client activates them once its background reconnect succeeds.
+        """
         if not self._mqtt_client.connected:
             if not await self._mqtt_client.async_connect():
-                return
+                _LOGGER.warning(
+                    "MQTT broker unreachable; subscriptions for device %s "
+                    "will activate after reconnect",
+                    device_id,
+                )
 
         device_mac = self.devices.get(device_id, {}).get("mac")
         if not device_mac:

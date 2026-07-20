@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,52 +84,64 @@ def parse_schedule_string(schedule_str: str) -> str:
     Supported formats:
     - "6-8" (means 6, 7 active)
     - "6" (means 6 active)
-    - "6-8, 18-21"
+    - "6-8, 18-21" (multiple ranges, "," or "/" separated)
     - "all"
     - "off"
+
+    Raises ValueError when the input contains only unparseable parts, so
+    callers refuse to save instead of silently wiping the schedule.
     """
     schedule_str = schedule_str.lower().strip()
     if schedule_str in ["off", "none", ""]:
         return "000000"
     if schedule_str == "all":
         return "FFFFFF"
-        
+
     active_hours = set()
-    parts = schedule_str.split(",")
-    
+    invalid_parts = []
+    parts = re.split(r"[,/]", schedule_str)
+
     for part in parts:
         part = part.strip()
         if not part:
             continue
-            
+
         if "-" in part:
             try:
                 start_s, end_s = part.split("-")
                 # Handle "06:00" format if user types it
                 start = int(start_s.split(":")[0])
                 end = int(end_s.split(":")[0])
-                
-                # Range is inclusive of start, exclusive of end? 
-                # User input "6-8" usually means 6, 7. 
+
+                # Range is inclusive of start, exclusive of end?
+                # User input "6-8" usually means 6, 7.
                 # If user inputs "06:00-08:00", they expect 2 hours.
                 # So range(start, end)
-                
+
                 # Boundary check
                 start = max(0, min(23, start))
                 end = max(0, min(24, end))
-                
+
                 for h in range(start, end):
                     active_hours.add(h)
             except ValueError:
                 _LOGGER.warning("Invalid range format: %s", part)
+                invalid_parts.append(part)
         else:
             try:
                 h = int(part.split(":")[0])
                 if 0 <= h <= 23:
                     active_hours.add(h)
+                else:
+                    _LOGGER.warning("Hour out of range: %s", part)
+                    invalid_parts.append(part)
             except ValueError:
                 _LOGGER.warning("Invalid hour format: %s", part)
-                
+                invalid_parts.append(part)
+
+    if not active_hours and invalid_parts:
+        raise ValueError(f"Unparseable schedule string: {schedule_str!r}")
+
     # Encode to hex
     b0 = 0
     b1 = 0
