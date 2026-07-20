@@ -155,6 +155,16 @@ class TestStateMappingConsistency:
                 f"(sensor will display raw hex string)"
             )
 
+    def test_q85_energy_keys_match_processors(self):
+        """Q85 energy keys must match its own field names, not G56's."""
+        d = load("0F060001")
+        for key in d["features"]["energy_data_keys"]:
+            assert key in d["processors"], (
+                f"0F060001: energy_data_key '{key}' has no processor"
+            )
+        assert "gasConsumption" in d["features"]["energy_data_keys"], \
+            "0F060001: gas sensor field must be persisted via energy store"
+
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_gas_consumption_processor(self, device_type):
         """E-series gas field must be available to the energy pipeline."""
@@ -748,6 +758,13 @@ class TestClimateTransitions:
                 f"{device_type}: mode_codes missing '{mode}'"
             assert len(mode_codes[mode]) > 0, \
                 f"{device_type}: mode_codes['{mode}'] is empty"
+
+    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    def test_boiler_climate_fallback_temp_attribute(self, device_type):
+        """The standby-mode fallback temperature attribute is config-driven."""
+        d = load(device_type)
+        climate = d["entities"]["climate"][0]
+        assert climate["defaults"]["fallback_temp_attribute"] == "heating_temp_nm"
 
     @pytest.mark.parametrize("device_type", BOILER_TYPES)
     def test_temp_settings_for_normal_and_energy_saving(self, device_type):
