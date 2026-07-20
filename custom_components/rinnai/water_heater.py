@@ -101,10 +101,8 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         """Update entity attributes based on coordinator data."""
         device = self._device
         if not device:
-            self._attr_available = False
+            # Availability is handled by RinnaiEntity.available
             return
-            
-        self._attr_available = device.online
 
         self._update_temperature_range()
 

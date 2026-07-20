@@ -5,8 +5,8 @@
         "dynamic_mqtt_code": true,
         "gas_consumption_digits": 8,
         "energy_data_keys": [
-            "gasUsed",
-            "supplyTime",
+            "gasConsumption",
+            "actualUseTime",
             "totalPowerSupplyTime",
             "totalHeatingBurningTime",
             "totalHotWaterBurningTime",

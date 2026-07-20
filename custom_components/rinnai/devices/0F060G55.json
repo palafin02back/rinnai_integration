@@ -132,7 +132,8 @@
                 "defaults": {
                     "off_mode": "standby",
                     "on_mode": "normal",
-                    "action_attribute": "burning_state"
+                    "action_attribute": "burning_state",
+                    "fallback_temp_attribute": "heating_temp_nm"
                 },
                 "modes": {
                     "standby": {

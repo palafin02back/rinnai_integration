@@ -79,9 +79,8 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
     def _update_attributes(self) -> None:
         device = self._device
         if not device:
-            self._attr_available = False
+            # Availability is handled by RinnaiEntity.available
             return
-        self._attr_available = device.online
         try:
             val = self.get_state_value(self._state_attribute)
             self._attr_native_value = float(val) if val is not None else None
