@@ -59,11 +59,15 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
         # Mandatory configuration - no defaults
-        self._attr_min_temp = config["min_temp"]
-        self._attr_max_temp = config["max_temp"]
+        self._configured_min_temp = config["min_temp"]
+        self._configured_max_temp = config["max_temp"]
+        self._attr_min_temp = self._configured_min_temp
+        self._attr_max_temp = self._configured_max_temp
         self._attr_target_temperature_step = config["step"]
         
         self._state_attribute = config["state_attribute"]
+        self._min_temp_attribute = config.get("min_temp_attribute")
+        self._max_temp_attribute = config.get("max_temp_attribute")
         self._relative_temperature_control = config.get("relative_temperature_control")
         self._command_topic = config.get("command_topic")
         # Standard devices still require command_topic. Relative control is an
@@ -102,6 +106,8 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
             
         self._attr_available = device.online
 
+        self._update_temperature_range()
+
         # Update temperature
         try:
             self._attr_target_temperature = self.get_state_value(self._state_attribute)
@@ -112,6 +118,53 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
             )
             self._attr_target_temperature = 0
         self._attr_current_temperature = self._attr_target_temperature
+
+    def _update_temperature_range(self) -> None:
+        """Update min/max temperature from optional state attributes."""
+        min_temp = self._temperature_bound(
+            self._min_temp_attribute,
+            self._configured_min_temp,
+        )
+        max_temp = self._temperature_bound(
+            self._max_temp_attribute,
+            self._configured_max_temp,
+        )
+
+        if min_temp > max_temp:
+            _LOGGER.warning(
+                "Device %s: invalid dynamic water heater range [%s, %s]; "
+                "using configured range [%s, %s]",
+                self._device_id,
+                min_temp,
+                max_temp,
+                self._configured_min_temp,
+                self._configured_max_temp,
+            )
+            min_temp = self._configured_min_temp
+            max_temp = self._configured_max_temp
+
+        self._attr_min_temp = min_temp
+        self._attr_max_temp = max_temp
+
+    def _temperature_bound(self, attribute: str | None, fallback: int | float) -> int | float:
+        """Return a configured temperature bound, falling back on bad data."""
+        if not attribute:
+            return fallback
+
+        try:
+            value = self.get_state_value(attribute)
+            if value is None:
+                return fallback
+            return int(value)
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Device %s: failed to parse water heater temperature bound "
+                "(attr=%s): %s",
+                self._device_id,
+                attribute,
+                err,
+            )
+            return fallback
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
