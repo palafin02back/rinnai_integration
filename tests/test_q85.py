@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 CORE_DIR = Path(__file__).parents[1] / "custom_components" / "rinnai" / "core"
 sys.path.insert(0, str(CORE_DIR))
 
 from entity_utils import (  # noqa: E402
     get_hex_byte,
+    is_dynamic_mqtt_code_enabled,
     normalize_dynamic_mqtt_code,
     resolve_mode_code,
 )
@@ -103,6 +105,24 @@ def test_dynamic_mqtt_code_rejects_protocol_message_codes() -> None:
     assert normalize_dynamic_mqtt_code("03F1", reserved) is None
     assert normalize_dynamic_mqtt_code("123", reserved) is None
     assert normalize_dynamic_mqtt_code("ZZZZ", reserved) is None
+
+
+def test_dynamic_mqtt_code_is_only_enabled_for_q85() -> None:
+    device_configs = CONFIG_PATH.parent.glob("*.json")
+    enabled_configs = [
+        path.name
+        for path in device_configs
+        if json.loads(path.read_text(encoding="utf-8"))
+        .get("features", {})
+        .get("dynamic_mqtt_code", False)
+    ]
+
+    assert enabled_configs == ["0F060001.json"]
+    assert is_dynamic_mqtt_code_enabled(
+        SimpleNamespace(features={"dynamic_mqtt_code": True})
+    )
+    assert not is_dynamic_mqtt_code_enabled(SimpleNamespace(features={}))
+    assert not is_dynamic_mqtt_code_enabled(None)
 
 
 def test_q85_schedule_shape_is_explicit() -> None:

@@ -56,6 +56,15 @@ def normalize_dynamic_mqtt_code(
         return None
     return normalized
 
+
+def is_dynamic_mqtt_code_enabled(config: Any) -> bool:
+    """Return whether a device explicitly opts in to dynamic MQTT codes."""
+    if config is None:
+        return False
+    features = getattr(config, "features", {})
+    return bool(features.get("dynamic_mqtt_code", False))
+
+
 def get_state_value(device_state: Any, attribute_key: str, mapping: dict[str, str] | None = None) -> Any:
     """
     Get value from device state using mapping.

@@ -24,7 +24,10 @@ from ..const import (
     REFESH_TIME,
 )
 from .config_manager import config_manager
-from .entity_utils import normalize_dynamic_mqtt_code
+from .entity_utils import (
+    is_dynamic_mqtt_code_enabled,
+    normalize_dynamic_mqtt_code,
+)
 from .mqtt_client import RinnaiMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -427,7 +430,7 @@ class RinnaiClient:
                         else:
                             config = self._device_configs.get(device_id)
                             dynamic_code = None
-                            if config:
+                            if is_dynamic_mqtt_code_enabled(config):
                                 dynamic_code = normalize_dynamic_mqtt_code(
                                     code,
                                     {

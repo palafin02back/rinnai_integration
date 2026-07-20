@@ -2,6 +2,7 @@
     "name": "Rinnai Boiler Q85",
     "features": {
         "heat_type": "Q85_HEAT_OVEN",
+        "dynamic_mqtt_code": true,
         "gas_consumption_digits": 8,
         "energy_data_keys": [
             "gasUsed",
