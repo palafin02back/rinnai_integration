@@ -40,6 +40,9 @@ ALL_DEVICE_TYPES = [
 BOILER_TYPES   = ["0F06000C", "0F060016", "0F060G55"]
 E_SERIES_TYPES = ["02720E86", "0272000E", "02720022", "02720010", "0272001C",
                    "02720E76", "02720E66", "0272000D"]
+E_SERIES_GAS_ENTITY_TYPES = [
+    device_type for device_type in E_SERIES_TYPES if device_type != "0272000D"
+]
 E32_TYPES      = ["02720E32"]
 E_MASSAGE      = ["02720E86", "0272000E", "02720022", "02720010", "0272001C"]
 E_CYCLE        = ["02720E86", "0272000E", "02720022"]
@@ -103,10 +106,11 @@ class TestStateMappingConsistency:
         # boiler / water heater common
         "operationMode", "burningState", "byteStr",
         "heatingReservationMode", "hotWaterReservationMode",
-        "faultCode", "errorCode",
+        "faultCode", "errorCode", "errorType",
         # E-series extras
         "massageMode", "cycleModeSetting", "temporaryCycleInsulationSetting",
-        "cycleReservationSetting1",
+        "cycleReservationSetting1", "frozenState", "ecoHeatLoad",
+        "pressurizationMode",
         # water softener
         "workMode", "saltLevel", "saltLow", "saltAlarm",
         "waterHardness", "regenCount", "outWaterFlow",
@@ -153,15 +157,29 @@ class TestStateMappingConsistency:
 
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_gas_consumption_processor(self, device_type):
-        """E-series gas field must be gasConsumption in both energy_keys and processors."""
+        """E-series gas field must be available to the energy pipeline."""
         d = load(device_type)
         energy_keys = d["features"]["energy_data_keys"]
         assert "gasConsumption" in energy_keys, \
             f"{device_type}: energy_data_keys missing 'gasConsumption'"
         assert "gasConsumption" in d["processors"], \
             f"{device_type}: processors missing 'gasConsumption'"
+
+    @pytest.mark.parametrize("device_type", E_SERIES_GAS_ENTITY_TYPES)
+    def test_e_series_gas_entity_mapping(self, device_type):
+        """E-series models exposing a gas entity must map its processed field."""
+        d = load(device_type)
         assert d["state_mapping"].get("gas_usage") == "gasConsumption", \
             f"{device_type}: state_mapping gas_usage should point to 'gasConsumption'"
+
+    def test_e51_does_not_expose_gas_usage_entity(self):
+        """E51 keeps gas data in the pipeline but intentionally has no gas entity."""
+        d = load("0272000D")
+        assert "gas_usage" not in d["state_mapping"]
+        assert not any(
+            sensor["key"] == "gas_usage"
+            for sensor in d["entities"].get("sensor", [])
+        )
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_energy_keys_match_processors(self, device_type):
@@ -609,6 +627,29 @@ class TestEntityPlatforms:
         wh = d["entities"]["water_heater"][0]
         assert wh["min_temp"] == 32, "E89 water_heater min_temp should be 32°C"
 
+    def test_e51_uses_observed_dynamic_temperature_bounds(self):
+        """E51 reports the water-heater settable range in the J00 payload."""
+        d = load("0272000D")
+        wh = d["entities"]["water_heater"][0]
+        assert wh["min_temp_attribute"] == "temp_setting_lower"
+        assert wh["max_temp_attribute"] == "temp_setting_upper"
+
+    def test_e51_eco_heat_load_is_command_select(self):
+        """E51 energy-saving level is user-selectable, not a read-only sensor."""
+        d = load("0272000D")
+        sensors = {s["key"]: s for s in d["entities"]["sensor"]}
+        selects = {s["key"]: s for s in d["entities"]["select"]}
+
+        assert "eco_heat_load" not in sensors
+        eco_heat_load = selects["eco_heat_load"]
+        assert eco_heat_load["command_key"] == "ecoHeatLoad"
+        assert eco_heat_load["state_attribute"] == "eco_heat_load"
+        assert eco_heat_load["options_map"] == {
+            "一般节能": "5a",
+            "标准节能": "50",
+            "强力节能": "46",
+        }
+
     def test_softener_has_force_regen_switch(self):
         d = load("0F070006")
         switches = d["entities"].get("switch", [])
@@ -784,6 +825,38 @@ class TestEndToEndStatePipeline:
         result = process_data(raw, d["processors"])
         assert result["hotWaterTempSetting"] == 42
         assert result["gasConsumption"] == pytest.approx(2.0)
+
+    def test_e51_observed_full_inf_payload(self):
+        """E51: observed J00 payload fields and hex4 temperature limits."""
+        d = load("0272000D")
+        raw = {
+            "burningState": "0",
+            "errorCode": "0",
+            "errorType": "0",
+            "hotWaterTempSetting": "3200",
+            "tempSettingUpper": "3c00",
+            "tempSettinglower": "2300",
+            "frozenState": "30",
+            "power": "31",
+            "ecoMode": "30",
+            "ecoHeatLoad": "46",
+            "temporaryCycleInsulationSetting": "30",
+            "cycleModeSetting": "1",
+            "pressurizationMode": "30",
+            "operationMode": "0",
+        }
+        result = process_data(raw, d["processors"])
+        assert result["hotWaterTempSetting"] == 50
+        assert result["tempSettingUpper"] == 60
+        assert result["tempSettinglower"] == 35
+        assert result["burningState"] == "0"
+        assert result["power"] == "31"
+        assert result["ecoMode"] == "30"
+        assert result["ecoHeatLoad"] == "46"
+        assert result["temporaryCycleInsulationSetting"] == "30"
+        assert result["cycleModeSetting"] == "1"
+        assert result["pressurizationMode"] == "30"
+        assert result["operationMode"] == "0"
 
     def test_e32_full_payload(self):
         """E32: hex2 temp, cycle fields, diagnostics, and energy fields."""

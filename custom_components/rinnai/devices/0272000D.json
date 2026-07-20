@@ -25,6 +25,12 @@
         "hotWaterTempSetting": [
             "hex4_to_int"
         ],
+        "tempSettingUpper": [
+            "hex4_to_int"
+        ],
+        "tempSettinglower": [
+            "hex4_to_int"
+        ],
         "gasConsumption": [
             "hex_to_int",
             {
@@ -37,16 +43,21 @@
     },
     "state_mapping": {
         "hot_water_temp": "hotWaterTempSetting",
+        "temp_setting_upper": "tempSettingUpper",
+        "temp_setting_lower": "tempSettinglower",
         "operation_mode": "operationMode",
         "burning_state": "burningState",
-        "gas_usage": "gasConsumption",
+        "error_type": "errorType",
+        "frozen_state": "frozenState",
+        "power": "power",
+        "eco_mode": "ecoMode",
+        "eco_heat_load": "ecoHeatLoad",
+        "cycle_mode": "cycleModeSetting",
+        "cycle_insulation": "temporaryCycleInsulationSetting",
+        "pressurization_mode": "pressurizationMode",
         "fault_code": "faultCode",
         "error_code": "errorCode",
-        "byte_str": "byteStr",
-        "monthly_gas_consumption": "monthlyGasConsumption",
-        "yearly_gas_consumption": "yearlyGasConsumption",
-        "today_gas_consumption": "todayGasConsumption",
-        "yesterday_gas_consumption": "yesterdayGasConsumption"
+        "byte_str": "byteStr"
     },
     "entities": {
         "water_heater": [
@@ -59,6 +70,8 @@
                 "command_topic": "hotWaterTempSetting",
                 "temp_format": "hex4",
                 "state_attribute": "hot_water_temp",
+                "min_temp_attribute": "temp_setting_lower",
+                "max_temp_attribute": "temp_setting_upper",
                 "operation_mode": "Hot Water"
             }
         ],
@@ -72,11 +85,31 @@
                 "state_attribute": "hot_water_temp"
             },
             {
+                "key": "temp_setting_upper",
+                "name": "最高设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "entity_category": "diagnostic",
+                "state_attribute": "temp_setting_upper"
+            },
+            {
+                "key": "temp_setting_lower",
+                "name": "最低设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "entity_category": "diagnostic",
+                "state_attribute": "temp_setting_lower"
+            },
+            {
                 "key": "burning_state",
                 "name": "燃烧状态",
                 "entity_category": "diagnostic",
                 "state_attribute": "burning_state",
                 "value_map": {
+                    "0": "Standby",
+                    "1": "Burning",
                     "30": "Standby",
                     "31": "Heating Water",
                     "32": "Burning",
@@ -84,56 +117,106 @@
                 }
             },
             {
-                "key": "gas_usage",
-                "name": "当前燃气用量",
-                "device_class": "gas",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "gas_usage",
-                "experimental": true
-            },
-            {
                 "key": "fault_code",
                 "name": "故障码",
                 "entity_category": "diagnostic",
-                "state_attribute": "fault_code"
+                "state_attribute": "fault_code",
+                "fallback_state_attribute": "error_code"
             },
             {
-                "key": "monthly_gas_consumption",
-                "name": "本月燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
+                "key": "error_type",
+                "name": "错误类型",
                 "entity_category": "diagnostic",
-                "state_attribute": "monthly_gas_consumption"
+                "state_attribute": "error_type"
             },
             {
-                "key": "yearly_gas_consumption",
-                "name": "本年燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
+                "key": "frozen_state",
+                "name": "冰冻状态",
                 "entity_category": "diagnostic",
-                "state_attribute": "yearly_gas_consumption"
+                "state_attribute": "frozen_state",
+                "value_map": {
+                    "30": "Normal",
+                    "31": "Frozen"
+                }
+            }
+        ],
+        "switch": [
+            {
+                "key": "power",
+                "name": "电源",
+                "type": "command_switch",
+                "command_key": "power",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "power",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
             },
             {
-                "key": "today_gas_consumption",
-                "name": "今日燃气用量",
-                "device_class": "gas",
-                "state_class": "total_increasing",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "today_gas_consumption"
+                "key": "eco_mode",
+                "name": "节能开关",
+                "type": "command_switch",
+                "command_key": "ecoMode",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "eco_mode",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
             },
             {
-                "key": "yesterday_gas_consumption",
-                "name": "昨日燃气用量",
-                "device_class": "gas",
-                "state_class": "total",
-                "unit_of_measurement": "m³",
-                "entity_category": "diagnostic",
-                "state_attribute": "yesterday_gas_consumption"
+                "key": "cycle_insulation",
+                "name": "一键循环",
+                "type": "command_switch",
+                "command_key": "temporaryCycleInsulationSetting",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "cycle_insulation",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
+            },
+            {
+                "key": "cycle_mode",
+                "name": "循环预约",
+                "type": "command_switch",
+                "command_key": "cycleModeSetting",
+                "command_on": "1",
+                "command_off": "0",
+                "state_attribute": "cycle_mode",
+                "on_values": [
+                    "1",
+                    "01"
+                ],
+                "off_values": [
+                    "0",
+                    "00"
+                ]
+            },
+            {
+                "key": "pressurization_mode",
+                "name": "增压模式",
+                "type": "command_switch",
+                "command_key": "pressurizationMode",
+                "command_on": "31",
+                "command_off": "30",
+                "state_attribute": "pressurization_mode",
+                "on_values": [
+                    "31"
+                ],
+                "off_values": [
+                    "30"
+                ]
             }
         ],
         "select": [
@@ -144,9 +227,37 @@
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
                 "options_map": {
-                    "正常": "00",
-                    "冬季节能": "01",
-                    "自动": "02"
+                    "普通模式": "0",
+                    "厨房模式": "1",
+                    "淋浴模式": "2"
+                },
+                "value_aliases": {
+                    "普通模式": [
+                        "00"
+                    ],
+                    "厨房模式": [
+                        "01"
+                    ],
+                    "淋浴模式": [
+                        "02"
+                    ]
+                }
+            },
+            {
+                "key": "eco_heat_load",
+                "name": "节能档位",
+                "type": "command_select",
+                "command_key": "ecoHeatLoad",
+                "state_attribute": "eco_heat_load",
+                "options_map": {
+                    "一般节能": "5a",
+                    "标准节能": "50",
+                    "强力节能": "46"
+                },
+                "value_aliases": {
+                    "一般节能": [
+                        "5A"
+                    ]
                 }
             }
         ]
