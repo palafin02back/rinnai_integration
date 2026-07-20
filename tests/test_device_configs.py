@@ -40,6 +40,9 @@ ALL_DEVICE_TYPES = [
 BOILER_TYPES   = ["0F06000C", "0F060016", "0F060G55"]
 E_SERIES_TYPES = ["02720E86", "0272000E", "02720022", "02720010", "0272001C",
                    "02720E76", "02720E66", "0272000D"]
+E_SERIES_GAS_ENTITY_TYPES = [
+    device_type for device_type in E_SERIES_TYPES if device_type != "0272000D"
+]
 E32_TYPES      = ["02720E32"]
 E_MASSAGE      = ["02720E86", "0272000E", "02720022", "02720010", "0272001C"]
 E_CYCLE        = ["02720E86", "0272000E", "02720022"]
@@ -154,15 +157,29 @@ class TestStateMappingConsistency:
 
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_gas_consumption_processor(self, device_type):
-        """E-series gas field must be gasConsumption in both energy_keys and processors."""
+        """E-series gas field must be available to the energy pipeline."""
         d = load(device_type)
         energy_keys = d["features"]["energy_data_keys"]
         assert "gasConsumption" in energy_keys, \
             f"{device_type}: energy_data_keys missing 'gasConsumption'"
         assert "gasConsumption" in d["processors"], \
             f"{device_type}: processors missing 'gasConsumption'"
+
+    @pytest.mark.parametrize("device_type", E_SERIES_GAS_ENTITY_TYPES)
+    def test_e_series_gas_entity_mapping(self, device_type):
+        """E-series models exposing a gas entity must map its processed field."""
+        d = load(device_type)
         assert d["state_mapping"].get("gas_usage") == "gasConsumption", \
             f"{device_type}: state_mapping gas_usage should point to 'gasConsumption'"
+
+    def test_e51_does_not_expose_gas_usage_entity(self):
+        """E51 keeps gas data in the pipeline but intentionally has no gas entity."""
+        d = load("0272000D")
+        assert "gas_usage" not in d["state_mapping"]
+        assert not any(
+            sensor["key"] == "gas_usage"
+            for sensor in d["entities"].get("sensor", [])
+        )
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_energy_keys_match_processors(self, device_type):

@@ -1,0 +1,410 @@
+{
+    "name": "Rinnai Boiler Q85",
+    "features": {
+        "heat_type": "Q85_HEAT_OVEN",
+        "dynamic_mqtt_code": true,
+        "gas_consumption_digits": 8,
+        "energy_data_keys": [
+            "gasUsed",
+            "supplyTime",
+            "totalPowerSupplyTime",
+            "totalHeatingBurningTime",
+            "totalHotWaterBurningTime",
+            "heatingBurningTimes",
+            "hotWaterBurningTimes"
+        ],
+        "reservation_mode_presets": {
+            "1": "0101DB446CDB006E4818C680017F80017F",
+            "2": "0102DB446CDB006E4818C680017F80017F",
+            "3": "0103DB446CDB006E4818C680017F80017F"
+        }
+    },
+    "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 5
+    },
+    "supported_requests": [
+        "get_schedule",
+        "save_schedule"
+    ],
+    "processors": {
+        "hotWaterTempSetting": [
+            "hex_to_int"
+        ],
+        "heatingTempSetting": [
+            "hex_to_int"
+        ],
+        "waterPressure": [
+            "hex_to_int",
+            {
+                "func": "divide",
+                "args": [
+                    1000
+                ]
+            }
+        ],
+        "actualUseTime": [
+            "hex_to_int"
+        ],
+        "totalPowerSupplyTime": [
+            "hex_to_int"
+        ],
+        "totalHeatingBurningTime": [
+            "hex_to_int"
+        ],
+        "totalHotWaterBurningTime": [
+            "hex_to_int"
+        ],
+        "heatingBurningTimes": [
+            "hex_to_int"
+        ],
+        "hotWaterBurningTimes": [
+            "hex_to_int"
+        ],
+        "gasConsumption": [
+            "hex_to_int",
+            {
+                "func": "divide",
+                "args": [
+                    10000
+                ]
+            }
+        ],
+        "burningStateDHW": [],
+        "burningStateCH": []
+    },
+    "state_mapping": {
+        "hot_water_temp": "hotWaterTempSetting",
+        "heating_temp": "heatingTempSetting",
+        "operation_mode": "operationMode",
+        "burning_state_dhw": "burningStateDHW",
+        "burning_state_ch": "burningStateCH",
+        "water_pressure": "waterPressure",
+        "gas_usage": "gasConsumption",
+        "supply_time": "actualUseTime",
+        "total_power_supply_time": "totalPowerSupplyTime",
+        "total_heating_burning_time": "totalHeatingBurningTime",
+        "total_hot_water_burning_time": "totalHotWaterBurningTime",
+        "heating_burning_times": "heatingBurningTimes",
+        "hot_water_burning_times": "hotWaterBurningTimes",
+        "reservation_mode": "heatingReservationMode",
+        "byte_str": "byteStr"
+    },
+    "entities": {
+        "water_heater": [
+            {
+                "name": "热水器",
+                "key": "main",
+                "min_temp": 35,
+                "max_temp": 60,
+                "step": 1,
+                "command_topic": "hotWaterTempSetting",
+                "state_attribute": "hot_water_temp",
+                "operation_mode": "Hot Water"
+            }
+        ],
+        "climate": [
+            {
+                "name": "采暖",
+                "key": "main",
+                "min_temp": 40,
+                "max_temp": 80,
+                "step": 1,
+                "defaults": {
+                    "off_mode": "standby",
+                    "on_mode": "normal",
+                    "action_attribute": "burning_state_ch"
+                },
+                "mode_match": "prefix",
+                "modes": {
+                    "standby": {
+                        "label": "Heating Off",
+                        "value": "standby"
+                    },
+                    "normal": {
+                        "label": "Normal Heating",
+                        "value": "normal"
+                    },
+                    "energy_saving": {
+                        "label": "Heating Energy Saving",
+                        "value": "energy_saving"
+                    },
+                    "outdoor": {
+                        "label": "Heating Outdoor",
+                        "value": "outdoor"
+                    }
+                },
+                "transitions": {
+                    "standby_to_normal": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31"
+                        }
+                    ],
+                    "standby_to_energy_saving": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "ecoMode",
+                            "value": "31"
+                        }
+                    ],
+                    "standby_to_outdoor": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_standby": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_energy_saving": [
+                        {
+                            "cmd": "ecoMode",
+                            "value": "31"
+                        }
+                    ],
+                    "normal_to_outdoor": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_standby": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_normal": [
+                        {
+                            "cmd": "ecoMode",
+                            "value": "31"
+                        }
+                    ],
+                    "energy_saving_to_outdoor": [
+                        {
+                            "cmd": "ecoMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_standby": [
+                        {
+                            "cmd": "heatingSwitch",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_normal": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31"
+                        }
+                    ],
+                    "outdoor_to_energy_saving": [
+                        {
+                            "cmd": "outdoorMode",
+                            "value": "31",
+                            "delay": 2
+                        },
+                        {
+                            "cmd": "ecoMode",
+                            "value": "31"
+                        }
+                    ]
+                },
+                "mode_codes": {
+                    "standby": [
+                        "02",
+                        "12"
+                    ],
+                    "normal": [
+                        "03"
+                    ],
+                    "energy_saving": [
+                        "43"
+                    ],
+                    "outdoor": [
+                        "83"
+                    ]
+                },
+                "temp_settings": {
+                    "normal": {
+                        "read": "heating_temp",
+                        "write": "heatingTempSetting"
+                    },
+                    "energy_saving": {
+                        "read": "heating_temp",
+                        "write": "heatingTempSetting"
+                    },
+                    "outdoor": {
+                        "fixed": 40
+                    }
+                },
+                "active_states": [
+                    "31",
+                    "32"
+                ]
+            }
+        ],
+        "sensor": [
+            {
+                "key": "hot_water_temp",
+                "name": "生活热水设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "hot_water_temp"
+            },
+            {
+                "key": "heating_temp",
+                "name": "采暖设定温度",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_attribute": "heating_temp"
+            },
+            {
+                "key": "burning_state_dhw",
+                "name": "热水燃烧状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "burning_state_dhw",
+                "value_map": {
+                    "30": "Standby",
+                    "31": "Burning",
+                    "32": "Burning",
+                    "33": "Error"
+                }
+            },
+            {
+                "key": "burning_state_ch",
+                "name": "采暖燃烧状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "burning_state_ch",
+                "value_map": {
+                    "30": "Standby",
+                    "31": "Burning",
+                    "32": "Burning",
+                    "33": "Error"
+                }
+            },
+            {
+                "key": "water_pressure",
+                "name": "水压",
+                "device_class": "pressure",
+                "state_class": "measurement",
+                "unit_of_measurement": "bar",
+                "state_attribute": "water_pressure"
+            },
+            {
+                "key": "gas_usage",
+                "name": "当前燃气用量",
+                "device_class": "gas",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "m³",
+                "entity_category": "diagnostic",
+                "state_attribute": "gas_usage"
+            },
+            {
+                "key": "total_heating_burning_time",
+                "name": "采暖累计燃烧时间",
+                "device_class": "duration",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "h",
+                "entity_category": "diagnostic",
+                "state_attribute": "total_heating_burning_time"
+            },
+            {
+                "key": "total_hot_water_burning_time",
+                "name": "热水累计燃烧时间",
+                "device_class": "duration",
+                "state_class": "total_increasing",
+                "unit_of_measurement": "h",
+                "entity_category": "diagnostic",
+                "state_attribute": "total_hot_water_burning_time"
+            },
+            {
+                "key": "heating_reservation",
+                "name": "采暖预约状态",
+                "type": "reservation_sensor",
+                "state_attribute": "byte_str"
+            },
+            {
+                "key": "circulation_status",
+                "name": "一键循环状态",
+                "entity_category": "diagnostic",
+                "state_attribute": "operation_mode",
+                "type": "circulation_sensor",
+                "byte_index": 2,
+                "on_value": "0C"
+            }
+        ],
+        "switch": [
+            {
+                "key": "heating_reservation",
+                "name": "采暖预约开关",
+                "type": "reservation_switch",
+                "state_attribute": "byte_str"
+            }
+        ],
+        "select": [
+            {
+                "key": "reservation_mode",
+                "name": "预约模式选择",
+                "options": [
+                    "Mode 1",
+                    "Mode 2",
+                    "Mode 3",
+                    "Mode 4",
+                    "Mode 5"
+                ],
+                "command_type": "schedule_mode",
+                "state_attribute": "byte_str"
+            }
+        ],
+        "text": [
+            {
+                "key": "schedule_mode_4",
+                "name": "自定义1 设置",
+                "mode_index": 4,
+                "command_type": "schedule_data",
+                "state_attribute": "byte_str"
+            },
+            {
+                "key": "schedule_mode_5",
+                "name": "自定义2 设置",
+                "mode_index": 5,
+                "command_type": "schedule_data",
+                "state_attribute": "byte_str"
+            }
+        ],
+        "button": [
+            {
+                "key": "water_circulation",
+                "name": "一键循环",
+                "type": "command_button",
+                "command_key": "temporaryCycleInsulationSetting",
+                "command_value": "31"
+            }
+        ]
+    }
+}

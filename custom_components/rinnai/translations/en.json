@@ -22,6 +22,20 @@
             "burning_state": {
                 "name": "Burning State"
             },
+            "burning_state_dhw": {
+                "name": "DHW Burning State"
+            },
+            "burning_state_ch": {
+                "name": "CH Burning State"
+            },
+            "circulation_status": {
+                "name": "One-key Circulation Status",
+                "state": {
+                    "Active": "Active",
+                    "Inactive": "Inactive",
+                    "Unknown": "Unknown"
+                }
+            },
             "gas_usage": {
                 "name": "Gas Usage"
             },
@@ -57,6 +71,11 @@
             },
             "heating_reservation": {
                 "name": "Heating Reservation Status"
+            }
+        },
+        "button": {
+            "water_circulation": {
+                "name": "One-key Circulation"
             }
         },
         "climate": {

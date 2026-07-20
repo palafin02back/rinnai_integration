@@ -30,7 +30,7 @@ jobs:
         body: |
           release： ${{ steps.tag.outputs.TAG_NAME }}
         draft: false
-        prerelease: false
+        prerelease: ${{ contains(steps.tag.outputs.TAG_NAME, '-beta') }}
         files: ${{ steps.tag.outputs.TAG_NAME }}.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

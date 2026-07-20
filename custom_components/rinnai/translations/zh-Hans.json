@@ -28,6 +28,30 @@
                     "Error": "错误"
                 }
             },
+            "burning_state_dhw": {
+                "name": "热水燃烧状态",
+                "state": {
+                    "Standby": "待机",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "burning_state_ch": {
+                "name": "采暖燃烧状态",
+                "state": {
+                    "Standby": "待机",
+                    "Burning": "燃烧中",
+                    "Error": "错误"
+                }
+            },
+            "circulation_status": {
+                "name": "一键循环状态",
+                "state": {
+                    "Active": "运行中",
+                    "Inactive": "未运行",
+                    "Unknown": "未知"
+                }
+            },
             "gas_usage": {
                 "name": "当前燃气用量"
             },
@@ -63,6 +87,11 @@
             },
             "heating_reservation": {
                 "name": "采暖预约状态"
+            }
+        },
+        "button": {
+            "water_circulation": {
+                "name": "一键循环"
             }
         },
         "climate": {

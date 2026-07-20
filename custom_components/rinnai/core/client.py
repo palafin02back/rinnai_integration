@@ -24,6 +24,10 @@ from ..const import (
     REFESH_TIME,
 )
 from .config_manager import config_manager
+from .entity_utils import (
+    is_dynamic_mqtt_code_enabled,
+    normalize_dynamic_mqtt_code,
+)
 from .mqtt_client import RinnaiMQTTClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -417,16 +421,36 @@ class RinnaiClient:
                 try:
                     payload = json.loads(msg.payload)
 
-                    if topic_type == "inf":
+                    if topic_type == "inf" and payload.get("enl"):
                         code = payload.get("code")
-                        if payload.get("enl") and code == proto["info_code"]:
-                            state_data = self._process_device_info(payload)
-                            if state_data:
-                                self._handle_state_update(device_id, state_data)
-                        elif payload.get("enl") and code == proto["reservation_code"]:
+                        if code == proto["reservation_code"]:
                             state_data = self._process_reservation_info(payload)
-                            if state_data:
-                                self._handle_state_update(device_id, state_data)
+                        elif code == proto["info_code"]:
+                            state_data = self._process_device_info(payload)
+                        else:
+                            config = self._device_configs.get(device_id)
+                            dynamic_code = None
+                            if is_dynamic_mqtt_code_enabled(config):
+                                dynamic_code = normalize_dynamic_mqtt_code(
+                                    code,
+                                    {
+                                        "0",
+                                        proto["info_code"],
+                                        proto["reservation_code"],
+                                    },
+                                )
+                            if dynamic_code:
+                                candidate_state = self._process_device_info(payload)
+                                known_fields = set(config.state_mapping.values())
+                                if known_fields.intersection(candidate_state):
+                                    self.devices[device_id]["authCode"] = dynamic_code
+                                    state_data = candidate_state
+                                else:
+                                    state_data = {}
+                            else:
+                                state_data = {}
+                        if state_data:
+                            self._handle_state_update(device_id, state_data)
                     elif topic_type == "stg":
                         if payload.get("egy") and payload.get("ptn") == proto["energy_pattern"]:
                             state_data = self._process_energy_data(payload, device_id)
