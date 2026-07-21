@@ -88,8 +88,9 @@ def parse_schedule_string(schedule_str: str) -> str:
     - "all"
     - "off"
 
-    Raises ValueError when the input contains only unparseable parts, so
-    callers refuse to save instead of silently wiping the schedule.
+    Raises ValueError when the input contains no valid hours, so callers
+    refuse to save instead of silently wiping the schedule. Ranges must stay
+    within a single day and have an increasing start/end pair.
     """
     schedule_str = schedule_str.lower().strip()
     if schedule_str in ["off", "none", ""]:
@@ -100,11 +101,13 @@ def parse_schedule_string(schedule_str: str) -> str:
     active_hours = set()
     invalid_parts = []
     parts = re.split(r"[,/]", schedule_str)
+    has_nonempty_part = False
 
     for part in parts:
         part = part.strip()
         if not part:
             continue
+        has_nonempty_part = True
 
         if "-" in part:
             try:
@@ -118,9 +121,8 @@ def parse_schedule_string(schedule_str: str) -> str:
                 # If user inputs "06:00-08:00", they expect 2 hours.
                 # So range(start, end)
 
-                # Boundary check
-                start = max(0, min(23, start))
-                end = max(0, min(24, end))
+                if not 0 <= start < end <= 24:
+                    raise ValueError
 
                 for h in range(start, end):
                     active_hours.add(h)
@@ -139,7 +141,7 @@ def parse_schedule_string(schedule_str: str) -> str:
                 _LOGGER.warning("Invalid hour format: %s", part)
                 invalid_parts.append(part)
 
-    if not active_hours and invalid_parts:
+    if not active_hours and (invalid_parts or not has_nonempty_part):
         raise ValueError(f"Unparseable schedule string: {schedule_str!r}")
 
     # Encode to hex
