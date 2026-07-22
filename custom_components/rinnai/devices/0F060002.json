@@ -1,12 +1,54 @@
 {
   "name": "Rinnai Boiler C66L",
   "features": {
-    "heat_type": "C66L_HEAT_OVEN",
+    "heat_type": "C66_HEAT_OVEN",
     "energy_data_keys": [
       "airConsumption"
     ]
   },
+  "schedule_config": {
+    "total_length": 34,
+    "status_byte_index": 0,
+    "mode_byte_index": 1,
+    "data_start_byte_index": 2,
+    "bytes_per_mode": 3,
+    "mode_count": 5
+  },
+  "schedule_channels": {
+    "heating": {
+      "get_type": "C66_HEAT_OVEN",
+      "save_type": "C66_HEAT_OVEN",
+      "response_key": "byteStr",
+      "state_key": "heatingReservationMode",
+      "mqtt_state_key": "heatingReservationMode",
+      "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 5
+      }
+    },
+    "hot_water": {
+      "get_type": "C66_HOT_WATER",
+      "save_type": "C66_HOT_WATER",
+      "response_key": "byteStr",
+      "state_key": "hotWaterReservationMode",
+      "mqtt_state_key": "hotWaterReservationMode",
+      "schedule_config": {
+        "total_length": 34,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 5
+      }
+    }
+  },
   "supported_requests": [
+    "get_schedule",
+    "save_schedule",
     "air_consumption"
   ],
   "processors": {
@@ -29,6 +71,8 @@
     "cycle_insulation": "temporaryCycleInsulationSetting",
     "heating_reservation_mode": "heatingReservationMode",
     "hot_water_reservation_mode": "hotWaterReservationMode",
+    "heating_schedule": "heatingReservationMode",
+    "hot_water_schedule": "hotWaterReservationMode",
     "fault_code": "faultCode",
     "error_code": "errorCode",
     "monthly_gas_consumption": "monthlyGasConsumption",
@@ -81,6 +125,20 @@
         "name": "故障码",
         "entity_category": "diagnostic",
         "state_attribute": "fault_code"
+      },
+      {
+        "key": "heating_reservation",
+        "name": "采暖预约状态",
+        "type": "reservation_sensor",
+        "state_attribute": "heating_schedule",
+        "schedule_channel": "heating"
+      },
+      {
+        "key": "hot_water_reservation",
+        "name": "热水预约状态",
+        "type": "reservation_sensor",
+        "state_attribute": "hot_water_schedule",
+        "schedule_channel": "hot_water"
       },
       {
         "key": "monthly_gas_consumption",
@@ -179,6 +237,72 @@
         "command_off": "55",
         "state_attribute": "cycle_insulation",
         "on_value": "AA"
+      },
+      {
+        "key": "heating_reservation",
+        "name": "采暖预约开关",
+        "type": "reservation_switch",
+        "state_attribute": "heating_schedule",
+        "schedule_channel": "heating"
+      },
+      {
+        "key": "hot_water_reservation",
+        "name": "热水预约开关",
+        "type": "reservation_switch",
+        "state_attribute": "hot_water_schedule",
+        "schedule_channel": "hot_water"
+      }
+    ],
+    "select": [
+      {
+        "key": "heating_reservation_mode",
+        "name": "采暖预约模式",
+        "options": ["Mode 1", "Mode 2", "Mode 3", "Mode 4", "Mode 5"],
+        "command_type": "schedule_mode",
+        "state_attribute": "heating_schedule",
+        "schedule_channel": "heating"
+      },
+      {
+        "key": "hot_water_reservation_mode",
+        "name": "热水预约模式",
+        "options": ["Mode 1", "Mode 2", "Mode 3", "Mode 4", "Mode 5"],
+        "command_type": "schedule_mode",
+        "state_attribute": "hot_water_schedule",
+        "schedule_channel": "hot_water"
+      }
+    ],
+    "text": [
+      {
+        "key": "heating_schedule_mode_4",
+        "name": "采暖自定义1 设置",
+        "mode_index": 4,
+        "command_type": "schedule_data",
+        "state_attribute": "heating_schedule",
+        "schedule_channel": "heating"
+      },
+      {
+        "key": "heating_schedule_mode_5",
+        "name": "采暖自定义2 设置",
+        "mode_index": 5,
+        "command_type": "schedule_data",
+        "state_attribute": "heating_schedule",
+        "schedule_channel": "heating"
+      },
+      {
+        "key": "hot_water_schedule_mode_4",
+        "name": "热水自定义1 设置",
+        "mode_index": 4,
+        "command_type": "schedule_data",
+        "state_attribute": "hot_water_schedule",
+        "schedule_channel": "hot_water"
+      },
+      {
+        "key": "hot_water_schedule_mode_5",
+        "name": "热水自定义2 设置",
+        "mode_index": 5,
+        "command_type": "schedule_data",
+        "state_attribute": "hot_water_schedule",
+        "schedule_channel": "hot_water"
       }
     ],
     "number": [

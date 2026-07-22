@@ -38,8 +38,11 @@ ALL_DEVICE_TYPES = [
 ]
 
 BOILER_TYPES   = ["0F06000C", "0F060016", "0F060G55"]
+CLIMATE_BOILER_TYPES = ["0F06000C", "0F060G55"]
 E_SERIES_TYPES = ["02720E86", "0272000E", "02720022", "02720010", "0272001C",
                    "02720E76", "02720E66", "0272000D"]
+E_RELATIVE_TYPES = ["02720E86", "0272000E", "02720E76", "02720E66"]
+E_ABSOLUTE_TYPES = ["02720022", "02720010", "0272001C", "0272000D"]
 E_SERIES_GAS_ENTITY_TYPES = [
     device_type for device_type in E_SERIES_TYPES if device_type != "0272000D"
 ]
@@ -49,7 +52,7 @@ E_CYCLE        = ["02720E86", "0272000E", "02720022"]
 E_THICK_THIN   = ["02720010", "0272001C"]
 SOFTENER_TYPES = ["0F070006"]
 RTC626_TYPES   = ["0F090004"]
-HEATPUMP_TYPES = ["0F090011"]
+HEATPUMP_TYPES = ["0F090011", "0F090011A"]
 
 CLIMATE_MODES  = ["standby", "normal", "energy_saving", "outdoor", "rapid"]
 
@@ -109,7 +112,7 @@ class TestStateMappingConsistency:
         "faultCode", "errorCode", "errorType",
         # E-series extras
         "massageMode", "cycleModeSetting", "temporaryCycleInsulationSetting",
-        "cycleReservationSetting1", "frozenState", "ecoHeatLoad",
+        "cycleReservationSetting", "cycleReservationSetting1", "frozenState", "ecoHeatLoad",
         "pressurizationMode",
         # water softener
         "workMode", "saltLevel", "saltLow", "saltAlarm",
@@ -118,13 +121,17 @@ class TestStateMappingConsistency:
         # RTC-626 / heat pump
         "power", "powerStatus", "runningState", "onlineStatus",
         "thermalStatus", "hpUnitOperationMode", "hpUnitPower",
-        "hpUnitConnect", "heatingReservationTime",
+        "hpUnitConnect", "heatingReservationTime", "fanState",
+        "heatingReservationSetting", "hotWaterReservationSetting",
+        "rapidHeatingSetting", "operationStatus",
         "operMode", "roomTemperatureDisplay",
         # E89 bath injection
         "bathWaterInjectionSetting",
         # C66L direct mode fields (separate booleans instead of operationMode)
         "power", "summerWinter", "ecoMode", "outdoorMode",
         "rapidHeating", "heatingReservationMode", "hotWaterReservationMode",
+        "heatingTiming", "roomTempControl", "rapidHotWater",
+        "usuallyReservationSetting", "regenStartTime",
         # Synthetic fields injected by coordinator (not from MQTT/processors)
         "monthlyGasConsumption", "yearlyGasConsumption",
         "todayGasConsumption", "yesterdayGasConsumption",
@@ -213,7 +220,7 @@ class TestProcessorChains:
 
     # ── Boiler G56/G58/G55 ───────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_boiler_hot_water_temp_hex2(self, device_type):
         """hotWaterTempSetting: hex2 "2A" → 42°C"""
         d = load(device_type)
@@ -250,7 +257,7 @@ class TestProcessorChains:
         # "07E6" = 2022 dec → 2022 h (no divide)
         assert process_value("7E6", chain) == 2022
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_boiler_heating_temp_nm(self, device_type):
         """heatingTempSettingNM: "38" → 56°C"""
         d = load(device_type)
@@ -309,12 +316,12 @@ class TestProcessorChains:
     # ── 热泵温控器 ────────────────────────────────────────────────────────────
 
     def test_heatpump_cold_temp_setting(self):
-        d = load("0F090011")
+        d = load("0F090011A")
         chain = d["processors"]["hpUnitColdTempSetting"]
         assert process_value("18", chain) == 24
 
     def test_heatpump_hot_temp_setting(self):
-        d = load("0F090011")
+        d = load("0F090011A")
         chain = d["processors"]["hpUnitHotTempSetting"]
         assert process_value("1C", chain) == 28
 
@@ -329,7 +336,7 @@ class TestTemperatureEncoding:
     E-series water heater: temp_format="hex4"               → 40°C encodes as "2800"
     """
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_boiler_water_heater_uses_hex2(self, device_type):
         d = load(device_type)
         wh = d["entities"]["water_heater"][0]
@@ -337,12 +344,20 @@ class TestTemperatureEncoding:
         assert fmt == "hex2", \
             f"{device_type}: water_heater should use hex2, got '{fmt}'"
 
-    @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
+    @pytest.mark.parametrize("device_type", E_ABSOLUTE_TYPES)
     def test_e_series_water_heater_uses_hex4(self, device_type):
         d = load(device_type)
         wh = d["entities"]["water_heater"][0]
         assert wh.get("temp_format") == "hex4", \
             f"{device_type}: water_heater should declare temp_format=hex4"
+
+    @pytest.mark.parametrize("device_type", E_RELATIVE_TYPES)
+    def test_legacy_e_series_uses_relative_temperature_commands(self, device_type):
+        wh = load(device_type)["entities"]["water_heater"][0]
+        control = wh["relative_temperature_control"]
+        assert "command_topic" not in wh
+        assert control["command_key"] == "hotWaterTempOperate"
+        assert (control["increase"], control["decrease"]) == ("01", "00")
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_water_heater_does_not_use_hex4(self, device_type):
@@ -392,12 +407,20 @@ class TestTemperatureEncoding:
 class TestEntityPlatforms:
     """Each device family must declare the correct set of entity platforms."""
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_boiler_has_all_platforms(self, device_type):
         d = load(device_type)
         entities = d["entities"]
-        for p in ("water_heater", "climate", "sensor", "switch", "select", "text"):
+        for p in ("water_heater", "climate", "sensor", "switch"):
             assert p in entities, f"{device_type}: missing platform '{p}'"
+
+    def test_g58_has_protocol_specific_platforms(self):
+        entities = load("0F060016")["entities"]
+        for platform in (
+            "water_heater", "number", "sensor", "switch", "select", "text", "button"
+        ):
+            assert platform in entities
+        assert "climate" not in entities
 
     @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
     def test_e_series_has_water_heater_and_sensor(self, device_type):
@@ -687,23 +710,135 @@ class TestEntityPlatforms:
         num_keys = [n["key"] for n in d["entities"]["number"]]
         assert "room_temp_setpoint" in num_keys
 
-    def test_heatpump_has_three_number_entities(self):
-        d = load("0F090011")
-        numbers = d["entities"].get("number", [])
-        assert len(numbers) == 3, \
-            f"0F090011: expected 3 number entities, got {len(numbers)}"
-        keys = {n["key"] for n in numbers}
-        assert keys == {
-            "room_temp_setpoint",
+    def test_heatpump_parent_and_child_entities_are_separated(self):
+        parent = load("0F090011")["entities"]
+        child = load("0F090011A")["entities"]
+        assert {item["key"] for item in parent["number"]} == {
+            "heating_temp_setpoint"
+        }
+        assert {item["key"] for item in child["number"]} == {
             "hp_unit_cold_temp_setpoint",
             "hp_unit_hot_temp_setpoint",
         }
+        assert "hp_unit_operation_mode" in {
+            item["key"] for item in child["select"]
+        }
+        assert not any(
+            item["key"].startswith("hp_unit")
+            for configs in parent.values()
+            for item in configs
+        )
 
-    def test_heatpump_has_mode_select(self):
-        d = load("0F090011")
-        selects = d["entities"].get("select", [])
-        keys = [s["key"] for s in selects]
-        assert "hp_unit_operation_mode" in keys, "0F090011: missing hp_unit_operation_mode select"
+
+class TestApkProtocolAlignment:
+    """Device-family contracts recovered from the official Android app."""
+
+    def test_known_working_device_paths_remain_compatible(self):
+        g56 = load("0F06000C")
+        e32 = load("02720E32")
+        e51 = load("0272000D")
+
+        assert g56["features"]["heat_type"] == "G56_HEAT_OVEN"
+        assert e32["entities"]["water_heater"][0][
+            "relative_temperature_control"
+        ]["command_key"] == "hotWaterTempOperate"
+        assert e51["entities"]["water_heater"][0]["command_topic"] == (
+            "hotWaterTempSetting"
+        )
+        assert e51["entities"]["water_heater"][0]["temp_format"] == "hex4"
+
+    def test_q85_exposes_heating_and_hot_water_schedule_channels(self):
+        config = load("0F060001")
+        channels = config["schedule_channels"]
+        assert channels["heating"]["get_type"] == "Q85_HEAT_OVEN"
+        assert channels["hot_water"]["get_type"] == "Q85_HOT_WATER"
+        assert channels["heating"]["state_key"] == "heatingReservationMode"
+        assert channels["hot_water"]["state_key"] == "hotWaterReservationMode"
+
+    def test_c66l_uses_app_schedule_type_names(self):
+        config = load("0F060002")
+        assert config["features"]["heat_type"] == "C66_HEAT_OVEN"
+        assert config["schedule_channels"]["heating"]["save_type"] == (
+            "C66_HEAT_OVEN"
+        )
+        assert config["schedule_channels"]["hot_water"]["save_type"] == (
+            "C66_HOT_WATER"
+        )
+
+    def test_g58_uses_combined_temperatures_and_split_schedule_saves(self):
+        config = load("0F060016")
+        water_heater = config["entities"]["water_heater"][0]
+        heating_number = config["entities"]["number"][0]
+        channels = config["schedule_channels"]
+
+        assert water_heater["command_topic"] == "tempSetting"
+        assert water_heater["combined_temperature_position"] == "hot_water"
+        assert heating_number["command_key"] == "tempSetting"
+        assert heating_number["combined_temperature_position"] == "heating"
+        assert {channel["get_type"] for channel in channels.values()} == {"0"}
+        assert channels["heating"]["save_type"] == "1"
+        assert channels["hot_water"]["save_type"] == "2"
+        switches = {item["key"]: item for item in config["entities"]["switch"]}
+        reservation_rules = switches["heating_reservation"]["command_on_rules"]
+        assert reservation_rules[0]["command"] == {"operationMode": "00"}
+        assert reservation_rules[1]["command"] == {"rapidHeatingSetting": "00"}
+        assert switches["heating_reservation"]["state_attribute"] == (
+            "heating_reservation_setting"
+        )
+        rapid = next(
+            item
+            for item in config["entities"]["select"]
+            if item["key"] == "rapid_heating"
+        )
+        assert rapid["command_key"] == "rapidHeatingSetting"
+        assert rapid["option_command_rules"]["快速"][0]["command"] == {
+            "operationMode": "00"
+        }
+
+    def test_g55_uses_action_toggles_without_unverified_schedule_api(self):
+        config = load("0F060G55")
+        switches = {item["key"]: item for item in config["entities"]["switch"]}
+        assert "get_schedule" not in config["supported_requests"]
+        assert "save_schedule" not in config["supported_requests"]
+        assert "schedule_config" not in config
+        for key, command_key in {
+            "heating_timing": "heatingTiming",
+            "room_temp_control": "roomTempControl",
+            "rapid_hot_water": "rapidHotWater",
+        }.items():
+            switch = switches[key]
+            assert switch["command_key"] == command_key
+            assert switch["command_on"] == switch["command_off"] == "31"
+            assert (switch["optimistic_on"], switch["optimistic_off"]) == (
+                "31",
+                "30",
+            )
+
+    @pytest.mark.parametrize("device_type", E_RELATIVE_TYPES)
+    def test_legacy_e_modes_use_action_command_keys(self, device_type):
+        config = load(device_type)
+        mode = next(
+            item
+            for item in config["entities"]["select"]
+            if item["key"] == "operation_mode"
+        )
+        assert mode["option_commands"]["普通"] == {"regularMode": "01"}
+        assert mode["option_commands"]["厨房"] == {"kitchenMode": "01"}
+        assert mode["option_commands"]["淋浴"] == {"showerMode": "01"}
+        if device_type in {"02720E76", "02720E66"}:
+            assert mode["option_commands"]["低温"] == {"lowTempMode": "01"}
+
+    def test_v2_e_models_use_the_app_schedule_save_types(self):
+        assert load("02720010")["features"]["heat_type"] == "E51_HOT_WATER"
+        assert load("02720022")["features"]["heat_type"] == "E51_HOT_WATER"
+        assert load("0272001C")["features"]["heat_type"] == "1"
+
+    def test_softener_regeneration_time_is_writable(self):
+        config = load("0F070006")
+        text = config["entities"]["text"][0]
+        assert config["state_mapping"]["regen_start_time"] == "regenStartTime"
+        assert text["command_type"] == "time_hex_pair"
+        assert text["command_key"] == "regenStartTime"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -713,7 +848,7 @@ class TestEntityPlatforms:
 class TestClimateTransitions:
     """All N×(N-1) mode transitions must be defined for boiler climate entities."""
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_all_transitions_present(self, device_type):
         d = load(device_type)
         climate = d["entities"]["climate"][0]
@@ -732,7 +867,7 @@ class TestClimateTransitions:
         assert not missing, \
             f"{device_type}: missing transitions: {missing}"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_standby_to_normal_uses_summer_winter(self, device_type):
         """Turning on heating always starts with summerWinter command."""
         d = load(device_type)
@@ -742,7 +877,7 @@ class TestClimateTransitions:
         assert "summerWinter" in cmds, \
             f"{device_type}: standby_to_normal must include summerWinter command"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_any_to_standby_uses_summer_winter(self, device_type):
         """All →standby transitions use summerWinter (toggle off)."""
         d = load(device_type)
@@ -754,7 +889,7 @@ class TestClimateTransitions:
             assert "summerWinter" in cmds, \
                 f"{device_type}: {key} must include summerWinter command"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_mode_codes_cover_all_modes(self, device_type):
         """mode_codes must include entries for all 5 modes."""
         d = load(device_type)
@@ -766,14 +901,14 @@ class TestClimateTransitions:
             assert len(mode_codes[mode]) > 0, \
                 f"{device_type}: mode_codes['{mode}'] is empty"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_boiler_climate_fallback_temp_attribute(self, device_type):
         """The standby-mode fallback temperature attribute is config-driven."""
         d = load(device_type)
         climate = d["entities"]["climate"][0]
         assert climate["defaults"]["fallback_temp_attribute"] == "heating_temp_nm"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_temp_settings_for_normal_and_energy_saving(self, device_type):
         """normal and energy_saving modes must have read/write temp settings."""
         d = load(device_type)
@@ -786,7 +921,7 @@ class TestClimateTransitions:
             assert "write" in ts[mode], \
                 f"{device_type}: temp_settings['{mode}'] missing 'write'"
 
-    @pytest.mark.parametrize("device_type", BOILER_TYPES)
+    @pytest.mark.parametrize("device_type", CLIMATE_BOILER_TYPES)
     def test_outdoor_and_rapid_have_fixed_temps(self, device_type):
         """outdoor and rapid modes have fixed temperatures (no adjustable setpoint)."""
         d = load(device_type)
@@ -920,18 +1055,23 @@ class TestEndToEndStatePipeline:
         assert result["roomTemperature"] == 21
         assert result["roomTempSetting"]  == 22
 
-    def test_heatpump_payload(self):
-        """Heat pump: all three temperature setpoints processed correctly."""
+    def test_heatpump_thermostat_payload(self):
+        """Thermostat temperatures use a whole byte plus a tenths byte."""
         d = load("0F090011")
         raw = {
-            "roomTempSetting":      "16",  # 22°C
-            "hpUnitColdTempSetting": "1A", # 26°C
-            "hpUnitHotTempSetting":  "1E", # 30°C
+            "heatingTempSetting": "1405",
+            "roomTemperature": "1500",
         }
         result = process_data(raw, d["processors"])
-        assert result["roomTempSetting"]       == 22
+        assert result["heatingTempSetting"] == 20.5
+        assert result["roomTemperature"] == 21.0
+
+    def test_heatpump_main_unit_payload(self):
+        d = load("0F090011A")
+        raw = {"hpUnitColdTempSetting": "1A", "hpUnitHotTempSetting": "1E"}
+        result = process_data(raw, d["processors"])
         assert result["hpUnitColdTempSetting"] == 26
-        assert result["hpUnitHotTempSetting"]  == 30
+        assert result["hpUnitHotTempSetting"] == 30
 
 
 # ═════════════════════════════════════════════════════════════════════════════

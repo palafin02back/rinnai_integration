@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import build_conditional_payload
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,7 +102,15 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
         preset_hex = None
         device = self._device
         if device and device.config:
-            presets = device.config.features.get("reservation_mode_presets", {})
+            if self.schedule_channel:
+                channel = device.config.schedule_channels.get(
+                    self.schedule_channel, {}
+                )
+                presets = channel.get("reservation_mode_presets", {})
+            else:
+                presets = device.config.features.get(
+                    "reservation_mode_presets", {}
+                )
             preset_hex = presets.get(str(mode_index))
             
         if preset_hex:
@@ -115,8 +124,14 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
                 if updated_hex:
                     new_hex = updated_hex
 
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
-            await self.coordinator.async_refresh_schedule(self._device_id)
+        if await self.coordinator.client.save_schedule_hour(
+            self._device_id,
+            new_hex,
+            schedule_channel=self.schedule_channel,
+        ):
+            await self.coordinator.async_refresh_schedule(
+                self._device_id, schedule_channel=self.schedule_channel
+            )
             self._attr_current_option = option
             self.async_write_ha_state()
 
@@ -136,6 +151,9 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
         self._command_key: str = config["command_key"]
         self._options_map: dict[str, str] = config["options_map"]
         self._option_commands: dict[str, dict[str, Any]] = config.get("option_commands", {})
+        self._option_command_rules: dict[str, list[dict[str, Any]]] = config.get(
+            "option_command_rules", {}
+        )
         self._value_to_label = self._build_value_to_label_map(config)
         self._state_attribute: str | None = config.get("state_attribute")
         self._attr_options = list(self._options_map.keys())
@@ -177,9 +195,15 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
     def _command_for_option(self, option: str) -> dict[str, Any] | None:
         """Return the configured command for an option."""
         if option in self._option_commands:
-            return dict(self._option_commands[option])
+            payload = dict(self._option_commands[option])
+        else:
+            value = self._options_map.get(option)
+            if value is None:
+                return None
+            payload = {self._command_key: value}
 
-        value = self._options_map.get(option)
-        if value is None:
-            return None
-        return {self._command_key: value}
+        return build_conditional_payload(
+            payload,
+            self._option_command_rules.get(option, []),
+            self.get_state_value,
+        )

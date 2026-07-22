@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import encode_combined_temperature, encode_temperature
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +61,10 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
         self._command_key: str = config["command_key"]
         self._state_attribute: str = config["state_attribute"]
         self._temp_format: str = config.get("temp_format", "hex2")
+        self._combined_temperature_position = config.get(
+            "combined_temperature_position"
+        )
+        self._companion_state_attribute = config.get("companion_state_attribute")
 
         self._attr_native_min_value = float(config["min"])
         self._attr_native_max_value = float(config["max"])
@@ -89,10 +94,21 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Send the new setpoint to the device."""
-        int_value = int(value)
-        hex_val = hex(int_value)[2:].upper().zfill(2)
-        if self._temp_format == "hex4":
-            hex_val = hex_val + "00"
+        try:
+            if self._combined_temperature_position:
+                if not self._companion_state_attribute:
+                    raise ValueError("companion_state_attribute is required")
+                companion = self.get_state_value(self._companion_state_attribute)
+                hex_val = encode_combined_temperature(
+                    value,
+                    companion,
+                    self._combined_temperature_position,
+                )
+            else:
+                hex_val = encode_temperature(value, self._temp_format)
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning("Cannot encode setpoint %s: %s", value, err)
+            return
 
         if await self.coordinator.async_send_command(
             self._device_id, {self._command_key: hex_val}

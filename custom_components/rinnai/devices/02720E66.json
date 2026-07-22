@@ -57,10 +57,15 @@
                 "min_temp": 35,
                 "max_temp": 65,
                 "step": 1,
-                "command_topic": "hotWaterTempSetting",
-                "temp_format": "hex4",
                 "state_attribute": "hot_water_temp",
-                "operation_mode": "Hot Water"
+                "operation_mode": "Hot Water",
+                "relative_temperature_control": {
+                    "command_key": "hotWaterTempOperate",
+                    "increase": "01",
+                    "decrease": "00",
+                    "step_delay_seconds": 2,
+                    "refresh_retries": 3
+                }
             }
         ],
         "sensor": [
@@ -169,9 +174,22 @@
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
                 "options_map": {
-                    "正常": "00",
-                    "冬季节能": "01",
-                    "自动": "02"
+                    "普通": "E0",
+                    "厨房": "C1",
+                    "淋浴": "90",
+                    "低温": "84"
+                },
+                "value_aliases": {
+                    "普通": ["A0", "E0", "80"],
+                    "厨房": ["81", "C0", "C1"],
+                    "淋浴": ["90", "D0"],
+                    "低温": ["04", "44", "84", "C4"]
+                },
+                "option_commands": {
+                    "普通": {"regularMode": "01"},
+                    "厨房": {"kitchenMode": "01"},
+                    "淋浴": {"showerMode": "01"},
+                    "低温": {"lowTempMode": "01"}
                 }
             },
             {

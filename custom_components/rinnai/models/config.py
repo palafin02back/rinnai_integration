@@ -20,6 +20,7 @@ class RinnaiDeviceConfig:
     
     # Schedule configuration
     schedule_config: dict[str, Any] = field(default_factory=dict)
+    schedule_channels: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RinnaiDeviceConfig:
@@ -31,5 +32,6 @@ class RinnaiDeviceConfig:
             processors=data.get("processors", {}),
             features=data.get("features", {}),
             supported_requests=data.get("supported_requests", []),
-            schedule_config=data.get("schedule_config", {})
+            schedule_config=data.get("schedule_config", {}),
+            schedule_channels=data.get("schedule_channels", {}),
         )

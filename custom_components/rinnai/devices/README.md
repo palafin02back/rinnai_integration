@@ -88,3 +88,4 @@
 - `entities`: 各平台实体配置（water_heater/climate/sensor/switch/select/text）
 - `supported_requests`: 支持的 HTTP 请求类型
 - `schedule_config`: 预约时间表字节布局（如支持预约功能）
+- `schedule_channels`: 多预约设备的查询/保存类型、响应字段、状态字段和独立字节布局

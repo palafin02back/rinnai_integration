@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import decode_time_hex_pair, encode_time_hex_pair
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +47,10 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         self._command_type = config["command_type"]
         self._mode_index = config.get("mode_index")
         self._state_attribute = config.get("state_attribute")
+        self._command_key = config.get("command_key")
+        self._attr_native_min = config.get("min")
+        self._attr_native_max = config.get("max")
+        self._attr_pattern = config.get("pattern")
         self._attr_native_value = "Unknown"
         if extra_state_attributes := config.get("extra_state_attributes"):
             self._attr_extra_state_attributes = dict(extra_state_attributes)
@@ -59,6 +64,18 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
     def _update_attributes(self) -> None:
         if self._command_type == "schedule_data" and self._mode_index:
             self._update_schedule_data()
+        elif self._command_type == "time_hex_pair" and self._state_attribute:
+            try:
+                self._attr_native_value = decode_time_hex_pair(
+                    str(self.get_state_value(self._state_attribute))
+                )
+            except (TypeError, ValueError) as err:
+                _LOGGER.warning(
+                    "Device %s: cannot decode %s: %s",
+                    self._device_id,
+                    self._state_attribute,
+                    err,
+                )
 
     def _update_schedule_data(self) -> None:
         if not self.schedule_manager or not self._state_attribute:
@@ -74,6 +91,23 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         """Set the text value."""
         if self._command_type == "schedule_data" and self._mode_index:
             await self._set_schedule_data(value)
+        elif self._command_type == "time_hex_pair" and self._command_key:
+            await self._set_time_hex_pair(value)
+
+    async def _set_time_hex_pair(self, value: str) -> None:
+        """Encode and send a water-softener regeneration start time."""
+        try:
+            encoded = encode_time_hex_pair(value)
+        except ValueError as err:
+            _LOGGER.warning(
+                "Device %s: invalid time %s: %s", self._device_id, value, err
+            )
+            return
+        if await self.coordinator.async_send_command(
+            self._device_id, {self._command_key: encoded}
+        ):
+            self._attr_native_value = value
+            self.async_write_ha_state()
 
     async def _set_schedule_data(self, value: str) -> None:
         if not self.schedule_manager or not self._state_attribute:
@@ -85,7 +119,13 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         if not new_hex:
             return
             
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
-            await self.coordinator.async_refresh_schedule(self._device_id)
+        if await self.coordinator.client.save_schedule_hour(
+            self._device_id,
+            new_hex,
+            schedule_channel=self.schedule_channel,
+        ):
+            await self.coordinator.async_refresh_schedule(
+                self._device_id, schedule_channel=self.schedule_channel
+            )
             self._attr_native_value = value
             self.async_write_ha_state()

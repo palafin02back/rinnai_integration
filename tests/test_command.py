@@ -11,7 +11,15 @@ import pytest
 CORE_DIR = Path(__file__).parents[1] / "custom_components" / "rinnai" / "core"
 sys.path.insert(0, str(CORE_DIR))
 
-from command import RinnaiCommand, build_mqtt_command_message  # noqa: E402
+from command import (  # noqa: E402
+    RinnaiCommand,
+    build_conditional_payload,
+    build_mqtt_command_message,
+    decode_time_hex_pair,
+    encode_combined_temperature,
+    encode_temperature,
+    encode_time_hex_pair,
+)
 
 
 @pytest.mark.parametrize(
@@ -70,6 +78,35 @@ def test_stateless_command_has_no_optimistic_state() -> None:
     assert command.optimistic_state == {}
 
 
+def test_conditional_payload_adds_only_matching_state_resets() -> None:
+    state = {"operation_mode": "03", "heating_reservation": "31"}
+    rules = [
+        {
+            "state_attribute": "operation_mode",
+            "not_in_values": ["0", "00", "2", "02"],
+            "command": {"operationMode": "00"},
+        },
+        {
+            "state_attribute": "heating_reservation",
+            "in_values": ["1", "01", "31"],
+            "command": {"heatingReservationSetting": "30"},
+        },
+    ]
+
+    assert build_conditional_payload(
+        {"rapidHeatingSetting": "01"}, rules, state.get
+    ) == {
+        "operationMode": "00",
+        "heatingReservationSetting": "30",
+        "rapidHeatingSetting": "01",
+    }
+
+    state.update(operation_mode="02", heating_reservation="30")
+    assert build_conditional_payload(
+        {"rapidHeatingSetting": "01"}, rules, state.get
+    ) == {"rapidHeatingSetting": "01"}
+
+
 def test_single_character_values_use_the_mobile_app_wire_format() -> None:
     """The official app zero-pads every one-character ENL value."""
     message = build_mqtt_command_message(
@@ -82,3 +119,51 @@ def test_single_character_values_use_the_mobile_app_wire_format() -> None:
         {"data": "01", "id": "cycleModeSetting"},
         {"data": "00", "id": "operationMode"},
     ]
+
+
+@pytest.mark.parametrize(
+    ("value", "temp_format", "expected"),
+    [
+        (40, "hex2", "28"),
+        (40, "hex4", "2800"),
+        (20, "hex_fraction", "1400"),
+        (20.5, "hex_fraction", "1405"),
+    ],
+)
+def test_temperature_encoding_matches_device_families(
+    value: float,
+    temp_format: str,
+    expected: str,
+) -> None:
+    assert encode_temperature(value, temp_format) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "companion", "position", "expected"),
+    [
+        (45, 55, "hot_water", "2D003700"),
+        (60, 42, "heating", "2A003C00"),
+    ],
+)
+def test_g58_combined_temperature_encoding(
+    value: float,
+    companion: float,
+    position: str,
+    expected: str,
+) -> None:
+    assert encode_combined_temperature(value, companion, position) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("00:00", "00,00"), ("02:30", "02,1E"), ("23:59", "17,3B")],
+)
+def test_softener_regeneration_time_encoding(value: str, expected: str) -> None:
+    assert encode_time_hex_pair(value) == expected
+    assert decode_time_hex_pair(expected) == value
+
+
+@pytest.mark.parametrize("value", ["24:00", "12:60", "invalid"])
+def test_softener_regeneration_time_rejects_invalid_values(value: str) -> None:
+    with pytest.raises(ValueError):
+        encode_time_hex_pair(value)

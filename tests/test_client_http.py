@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 import time
 from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -170,3 +170,99 @@ async def test_perform_request_retries_only_once(client_module):
     assert await client.perform_request("device-id", "get_schedule") is False
     assert session.get.await_count == 3
     assert client._token is None
+
+
+@pytest.mark.asyncio
+async def test_get_schedule_info_merges_configured_channels(client_module):
+    """One request type can expose multiple named schedule state fields."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule", "save_schedule"],
+        features={"heat_type": "legacy"},
+        schedule_channels={
+            "heating": {
+                "get_type": "0",
+                "save_type": "1",
+                "response_key": "heatingReservationMode",
+                "state_key": "heatingReservationMode",
+            },
+            "hot_water": {
+                "get_type": "0",
+                "save_type": "2",
+                "response_key": "hotWaterReservationMode",
+                "state_key": "hotWaterReservationMode",
+            },
+        },
+    )
+    client.perform_request = AsyncMock(
+        return_value={
+            "heatingReservationMode": "HEATING",
+            "hotWaterReservationMode": "HOT_WATER",
+        }
+    )
+
+    assert await client.get_schedule_info("device-id") == {
+        "heatingReservationMode": "HEATING",
+        "hotWaterReservationMode": "HOT_WATER",
+    }
+    client.perform_request.assert_awaited_once_with(
+        "device-id", "get_schedule", heat_type="0"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_schedule_info_queries_distinct_channel_types(client_module):
+    """Q85-style schedule channels require one query per app type."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule"],
+        features={"heat_type": "Q85_HEAT_OVEN"},
+        schedule_channels={
+            "heating": {
+                "get_type": "Q85_HEAT_OVEN",
+                "response_key": "byteStr",
+                "state_key": "heatingReservationMode",
+            },
+            "hot_water": {
+                "get_type": "Q85_HOT_WATER",
+                "response_key": "byteStr",
+                "state_key": "hotWaterReservationMode",
+            },
+        },
+    )
+    client.perform_request = AsyncMock(
+        side_effect=[{"byteStr": "HEATING"}, {"byteStr": "HOT_WATER"}]
+    )
+
+    assert await client.get_schedule_info("device-id") == {
+        "heatingReservationMode": "HEATING",
+        "hotWaterReservationMode": "HOT_WATER",
+    }
+    assert client.perform_request.await_args_list == [
+        call("device-id", "get_schedule", heat_type="Q85_HEAT_OVEN"),
+        call("device-id", "get_schedule", heat_type="Q85_HOT_WATER"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_save_schedule_uses_channel_specific_type(client_module):
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["save_schedule"],
+        features={"heat_type": "legacy"},
+        schedule_channels={"hot_water": {"save_type": "2"}},
+    )
+    client.perform_request = AsyncMock(return_value=True)
+
+    assert await client.save_schedule_hour(
+        "device-id", "AABB", schedule_channel="hot_water"
+    )
+    client.perform_request.assert_awaited_once_with(
+        "device-id", "save_schedule", data="AABB", heat_type="2"
+    )

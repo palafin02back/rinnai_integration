@@ -2,7 +2,7 @@
     "_comment": "RUS-**E65G系列 热水器",
     "name": "Rinnai Hot Water Heater E65",
     "features": {
-        "heat_type": "E65_HOT_WATER",
+        "heat_type": "E51_HOT_WATER",
         "energy_data_keys": [
             "gasConsumption"
         ]

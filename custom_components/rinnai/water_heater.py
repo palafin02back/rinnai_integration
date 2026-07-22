@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import encode_combined_temperature, encode_temperature
 from .entity import RinnaiEntity
 from .relative_temperature import (
     async_set_relative_temperature,
@@ -77,6 +78,10 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         # "hex2" → 2-char (G56 style: 40°C → "28")
         # "hex4" → 4-char (E-series style: 40°C → "2800")
         self._temp_format = config.get("temp_format", "hex2")
+        self._combined_temperature_position = config.get(
+            "combined_temperature_position"
+        )
+        self._companion_state_attribute = config.get("companion_state_attribute")
         
         # Operation mode name from config, default to "Hot Water" if not specified (display only)
         self._operation_mode = config.get("operation_mode", "Hot Water")
@@ -182,9 +187,26 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
             await self._async_set_relative_temperature(temperature)
             return
 
-        hex_temperature = hex(temperature)[2:].upper().zfill(2)
-        if self._temp_format == "hex4":
-            hex_temperature = hex_temperature + "00"
+        try:
+            if self._combined_temperature_position:
+                if not self._companion_state_attribute:
+                    raise ValueError("companion_state_attribute is required")
+                companion = self.get_state_value(self._companion_state_attribute)
+                hex_temperature = encode_combined_temperature(
+                    temperature,
+                    companion,
+                    self._combined_temperature_position,
+                )
+            else:
+                hex_temperature = encode_temperature(temperature, self._temp_format)
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Device %s: cannot encode water heater temperature %s: %s",
+                self._device_id,
+                temperature,
+                err,
+            )
+            return
         command = {self._command_topic: hex_temperature}
 
         success = await self.coordinator.async_send_command(self._device_id, command)

@@ -14,6 +14,7 @@
         "regen_count": "regenCount",
         "salt_alarm": "saltAlarm",
         "water_velocity": "waterVelocity",
+        "regen_start_time": "regenStartTime",
         "fault_code": "faultCode",
         "error_code": "errorCode"
     },
@@ -71,6 +72,18 @@
                 "name": "故障码",
                 "entity_category": "diagnostic",
                 "state_attribute": "fault_code"
+            }
+        ],
+        "text": [
+            {
+                "key": "regen_start_time",
+                "name": "再生开始时间",
+                "command_type": "time_hex_pair",
+                "command_key": "regenStartTime",
+                "state_attribute": "regen_start_time",
+                "pattern": "[0-2][0-9]:[0-5][0-9]",
+                "min": 5,
+                "max": 5
             }
         ],
         "button": [

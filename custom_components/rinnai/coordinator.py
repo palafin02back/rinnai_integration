@@ -256,10 +256,14 @@ class RinnaiCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(self.data)
         return True
 
-    async def async_refresh_schedule(self, device_id: str) -> None:
+    async def async_refresh_schedule(
+        self, device_id: str, schedule_channel: str | None = None
+    ) -> None:
         """Refresh schedule info for a device."""
         _LOGGER.debug("Refreshing schedule info for device: %s", device_id)
-        schedule_data = await self.client.get_schedule_info(device_id)
+        schedule_data = await self.client.get_schedule_info(
+            device_id, schedule_channel=schedule_channel
+        )
         if schedule_data:
             if device_id in self._devices:
                 self._devices[device_id].update_from_api_data(schedule_data)

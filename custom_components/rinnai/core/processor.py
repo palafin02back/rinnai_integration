@@ -45,6 +45,23 @@ def hex4_to_int(value: Any, *args) -> int:
     _LOGGER.warning("Failed to convert hex4 value: %s", value)
     return 0
 
+
+@processor
+def hex_fraction_to_float(value: Any, *args) -> float:
+    """Decode a two-byte temperature whose second byte stores tenths."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str) and len(value) == 4:
+        try:
+            whole = int(value[:2], 16)
+            tenths = int(value[2:], 16)
+            if 0 <= tenths <= 9:
+                return whole + tenths / 10
+        except ValueError:
+            pass
+    _LOGGER.warning("Failed to convert fractional hex value: %s", value)
+    return 0.0
+
 @processor
 def multiply(value: Any, factor: float | int) -> float | int:
     """Multiply value by factor."""

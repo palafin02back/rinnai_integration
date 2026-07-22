@@ -405,13 +405,87 @@ class RinnaiClient:
             _LOGGER.error("Error performing request %s: %s", request_name, err)
             return None
 
-    async def get_schedule_info(self, device_id: str) -> dict[str, Any] | None:
-        """Get schedule info using configurable request."""
-        return await self.perform_request(device_id, "get_schedule")
+    async def get_schedule_info(
+        self,
+        device_id: str,
+        schedule_channel: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Get one or all configured schedule channels."""
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if not channels:
+            return await self.perform_request(device_id, "get_schedule")
 
-    async def save_schedule_hour(self, device_id: str, schedule_data: str) -> bool:
-        """Save schedule info using configurable request."""
-        result = await self.perform_request(device_id, "save_schedule", data=schedule_data)
+        if schedule_channel is not None:
+            channel = channels.get(schedule_channel)
+            if channel is None:
+                _LOGGER.error(
+                    "Unknown schedule channel %s for device %s",
+                    schedule_channel,
+                    device_id,
+                )
+                return None
+            response = await self.perform_request(
+                device_id,
+                "get_schedule",
+                heat_type=channel.get("get_type", config.features.get("heat_type")),
+            )
+            return self._map_schedule_response(response, {schedule_channel: channel})
+
+        merged: dict[str, Any] = {}
+        channels_by_type: dict[str, dict[str, dict[str, Any]]] = {}
+        for name, channel in channels.items():
+            get_type = str(channel.get("get_type", config.features.get("heat_type")))
+            channels_by_type.setdefault(get_type, {})[name] = channel
+
+        for get_type, grouped_channels in channels_by_type.items():
+            response = await self.perform_request(
+                device_id, "get_schedule", heat_type=get_type
+            )
+            mapped = self._map_schedule_response(response, grouped_channels)
+            if mapped:
+                merged.update(mapped)
+        return merged or None
+
+    @staticmethod
+    def _map_schedule_response(
+        response: Any,
+        channels: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Map API schedule fields onto raw state keys declared by channels."""
+        if not isinstance(response, dict):
+            return None
+        mapped: dict[str, Any] = {}
+        for channel in channels.values():
+            response_key = channel.get("response_key", "byteStr")
+            state_key = channel.get("state_key", response_key)
+            if response_key in response:
+                mapped[state_key] = response[response_key]
+        return mapped or response
+
+    async def save_schedule_hour(
+        self,
+        device_id: str,
+        schedule_data: str,
+        schedule_channel: str | None = None,
+    ) -> bool:
+        """Save schedule info using the configured channel request type."""
+        kwargs: dict[str, Any] = {"data": schedule_data}
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if schedule_channel is not None:
+            channel = channels.get(schedule_channel)
+            if channel is None:
+                _LOGGER.error(
+                    "Unknown schedule channel %s for device %s",
+                    schedule_channel,
+                    device_id,
+                )
+                return False
+            kwargs["heat_type"] = channel.get(
+                "save_type", config.features.get("heat_type")
+            )
+        result = await self.perform_request(device_id, "save_schedule", **kwargs)
         return bool(result)
 
     @callback
@@ -422,12 +496,22 @@ class RinnaiClient:
 
         self.device_states[device_id].update(state_data)
         
-        # Sync reservation mode fields to byteStr (G56/G55/G58 use heatingReservationMode,
-        # E-series water heaters use hotWaterReservationMode)
-        for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
-            if reservation_key in state_data:
-                self.device_states[device_id]["byteStr"] = state_data[reservation_key]
-                break
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if channels:
+            for channel in channels.values():
+                if channel.get("state_key") != "byteStr":
+                    continue
+                reservation_key = channel.get("mqtt_state_key", "byteStr")
+                if reservation_key in state_data:
+                    self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                    break
+        else:
+            # Legacy single-channel configs expose their reservation as byteStr.
+            for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
+                if reservation_key in state_data:
+                    self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                    break
 
         # Notify callbacks
         if device_id in self._state_callbacks:

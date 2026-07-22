@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom_compone
 from processor import (
     hex_to_int,
     hex4_to_int,
+    hex_fraction_to_float,
     multiply,
     divide,
     to_type,
@@ -72,6 +73,20 @@ class TestHex4ToInt:
 
     def test_invalid_hex_returns_zero(self):
         assert hex4_to_int("XXXX") == 0
+
+
+class TestHexFractionToFloat:
+    """Tests for the heat-pump whole-byte plus tenths encoding."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("1400", 20.0), ("1405", 20.5), ("1A09", 26.9)],
+    )
+    def test_normal_conversion(self, raw, expected):
+        assert hex_fraction_to_float(raw) == expected
+
+    def test_invalid_value_returns_zero(self):
+        assert hex_fraction_to_float("invalid") == 0.0
 
 
 class TestMultiply:

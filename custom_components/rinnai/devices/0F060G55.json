@@ -12,24 +12,9 @@
             "totalHotWaterBurningTime",
             "heatingBurningTimes",
             "hotWaterBurningTimes"
-        ],
-        "reservation_mode_presets": {
-            "1": "0101DB446CDB006E4818C680017F80017F",
-            "2": "0102DB446CDB006E4818C680017F80017F",
-            "3": "0103DB446CDB006E4818C680017F80017F"
-        }
-    },
-    "schedule_config": {
-        "total_length": 34,
-        "status_byte_index": 0,
-        "mode_byte_index": 1,
-        "data_start_byte_index": 2,
-        "bytes_per_mode": 3,
-        "mode_count": 5
+        ]
     },
     "supported_requests": [
-        "get_schedule",
-        "save_schedule",
         "air_consumption",
         "gas_water_consumption"
     ],
@@ -41,9 +26,6 @@
             "hex_to_int"
         ],
         "heatingTempSettingHES": [
-            "hex_to_int"
-        ],
-        "roomTempControl": [
             "hex_to_int"
         ],
         "heatingOutWaterTempControl": [
@@ -102,8 +84,9 @@
         "total_hot_water_burning_time": "totalHotWaterBurningTime",
         "heating_burning_times": "heatingBurningTimes",
         "hot_water_burning_times": "hotWaterBurningTimes",
-        "reservation_mode": "heatingReservationMode",
-        "byte_str": "byteStr",
+        "heating_timing": "heatingTiming",
+        "room_temp_control": "roomTempControl",
+        "rapid_hot_water": "rapidHotWater",
         "monthly_gas_consumption": "monthlyGasConsumption",
         "yearly_gas_consumption": "yearlyGasConsumption",
         "today_gas_consumption": "todayGasConsumption",
@@ -416,12 +399,6 @@
                 "experimental": true
             },
             {
-                "key": "heating_reservation",
-                "name": "采暖预约状态",
-                "type": "reservation_sensor",
-                "state_attribute": "byte_str"
-            },
-            {
                 "key": "monthly_gas_consumption",
                 "name": "本月燃气用量",
                 "device_class": "gas",
@@ -460,41 +437,40 @@
         ],
         "switch": [
             {
-                "key": "heating_reservation",
-                "name": "采暖预约开关",
-                "type": "reservation_switch",
-                "state_attribute": "byte_str"
-            }
-        ],
-        "select": [
-            {
-                "key": "reservation_mode",
-                "name": "预约模式选择",
-                "options": [
-                    "Mode 1",
-                    "Mode 2",
-                    "Mode 3",
-                    "Mode 4",
-                    "Mode 5"
-                ],
-                "command_type": "schedule_mode",
-                "state_attribute": "byte_str"
-            }
-        ],
-        "text": [
-            {
-                "key": "schedule_mode_4",
-                "name": "自定义1 设置",
-                "mode_index": 4,
-                "command_type": "schedule_data",
-                "state_attribute": "byte_str"
+                "key": "heating_timing",
+                "name": "采暖定时",
+                "type": "command_switch",
+                "command_key": "heatingTiming",
+                "command_on": "31",
+                "command_off": "31",
+                "optimistic_on": "31",
+                "optimistic_off": "30",
+                "state_attribute": "heating_timing",
+                "on_value": "31"
             },
             {
-                "key": "schedule_mode_5",
-                "name": "自定义2 设置",
-                "mode_index": 5,
-                "command_type": "schedule_data",
-                "state_attribute": "byte_str"
+                "key": "room_temp_control",
+                "name": "室温控制",
+                "type": "command_switch",
+                "command_key": "roomTempControl",
+                "command_on": "31",
+                "command_off": "31",
+                "optimistic_on": "31",
+                "optimistic_off": "30",
+                "state_attribute": "room_temp_control",
+                "on_value": "31"
+            },
+            {
+                "key": "rapid_hot_water",
+                "name": "快速热水",
+                "type": "command_switch",
+                "command_key": "rapidHotWater",
+                "command_on": "31",
+                "command_off": "31",
+                "optimistic_on": "31",
+                "optimistic_off": "30",
+                "state_attribute": "rapid_hot_water",
+                "on_value": "31"
             }
         ]
     }

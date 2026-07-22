@@ -27,6 +27,43 @@
         "bytes_per_mode": 3,
         "mode_count": 5
     },
+    "schedule_channels": {
+        "heating": {
+            "get_type": "Q85_HEAT_OVEN",
+            "save_type": "Q85_HEAT_OVEN",
+            "response_key": "byteStr",
+            "state_key": "heatingReservationMode",
+            "mqtt_state_key": "heatingReservationMode",
+            "reservation_mode_presets": {
+                "1": "0101DB446CDB006E4818C680017F80017F",
+                "2": "0102DB446CDB006E4818C680017F80017F",
+                "3": "0103DB446CDB006E4818C680017F80017F"
+            },
+            "schedule_config": {
+                "total_length": 34,
+                "status_byte_index": 0,
+                "mode_byte_index": 1,
+                "data_start_byte_index": 2,
+                "bytes_per_mode": 3,
+                "mode_count": 5
+            }
+        },
+        "hot_water": {
+            "get_type": "Q85_HOT_WATER",
+            "save_type": "Q85_HOT_WATER",
+            "response_key": "byteStr",
+            "state_key": "hotWaterReservationMode",
+            "mqtt_state_key": "hotWaterReservationMode",
+            "schedule_config": {
+                "total_length": 34,
+                "status_byte_index": 0,
+                "mode_byte_index": 1,
+                "data_start_byte_index": 2,
+                "bytes_per_mode": 3,
+                "mode_count": 5
+            }
+        }
+    },
     "supported_requests": [
         "get_schedule",
         "save_schedule"
@@ -92,7 +129,9 @@
         "heating_burning_times": "heatingBurningTimes",
         "hot_water_burning_times": "hotWaterBurningTimes",
         "reservation_mode": "heatingReservationMode",
-        "byte_str": "byteStr"
+        "byte_str": "byteStr",
+        "heating_schedule": "heatingReservationMode",
+        "hot_water_schedule": "hotWaterReservationMode"
     },
     "entities": {
         "water_heater": [
@@ -346,7 +385,15 @@
                 "key": "heating_reservation",
                 "name": "采暖预约状态",
                 "type": "reservation_sensor",
-                "state_attribute": "byte_str"
+                "state_attribute": "heating_schedule",
+                "schedule_channel": "heating"
+            },
+            {
+                "key": "hot_water_reservation",
+                "name": "热水预约状态",
+                "type": "reservation_sensor",
+                "state_attribute": "hot_water_schedule",
+                "schedule_channel": "hot_water"
             },
             {
                 "key": "circulation_status",
@@ -363,7 +410,15 @@
                 "key": "heating_reservation",
                 "name": "采暖预约开关",
                 "type": "reservation_switch",
-                "state_attribute": "byte_str"
+                "state_attribute": "heating_schedule",
+                "schedule_channel": "heating"
+            },
+            {
+                "key": "hot_water_reservation",
+                "name": "热水预约开关",
+                "type": "reservation_switch",
+                "state_attribute": "hot_water_schedule",
+                "schedule_channel": "hot_water"
             }
         ],
         "select": [
@@ -378,7 +433,22 @@
                     "Mode 5"
                 ],
                 "command_type": "schedule_mode",
-                "state_attribute": "byte_str"
+                "state_attribute": "heating_schedule",
+                "schedule_channel": "heating"
+            },
+            {
+                "key": "hot_water_reservation_mode",
+                "name": "热水预约模式选择",
+                "options": [
+                    "Mode 1",
+                    "Mode 2",
+                    "Mode 3",
+                    "Mode 4",
+                    "Mode 5"
+                ],
+                "command_type": "schedule_mode",
+                "state_attribute": "hot_water_schedule",
+                "schedule_channel": "hot_water"
             }
         ],
         "text": [
@@ -387,14 +457,32 @@
                 "name": "自定义1 设置",
                 "mode_index": 4,
                 "command_type": "schedule_data",
-                "state_attribute": "byte_str"
+                "state_attribute": "heating_schedule",
+                "schedule_channel": "heating"
             },
             {
                 "key": "schedule_mode_5",
                 "name": "自定义2 设置",
                 "mode_index": 5,
                 "command_type": "schedule_data",
-                "state_attribute": "byte_str"
+                "state_attribute": "heating_schedule",
+                "schedule_channel": "heating"
+            },
+            {
+                "key": "hot_water_schedule_mode_4",
+                "name": "热水自定义1 设置",
+                "mode_index": 4,
+                "command_type": "schedule_data",
+                "state_attribute": "hot_water_schedule",
+                "schedule_channel": "hot_water"
+            },
+            {
+                "key": "hot_water_schedule_mode_5",
+                "name": "热水自定义2 设置",
+                "mode_index": 5,
+                "command_type": "schedule_data",
+                "state_attribute": "hot_water_schedule",
+                "schedule_channel": "hot_water"
             }
         ],
         "button": [
