@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import RinnaiCommand
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,6 +109,11 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         self._command_key: str = config["command_key"]
         self._command_on: str = config["command_on"]
         self._command_off: str = config["command_off"]
+        self._optimistic_on: str | None = config.get("optimistic_on")
+        self._optimistic_off: str | None = config.get("optimistic_off")
+        self._optimistic_state_key: str = config.get(
+            "optimistic_state_key", self._command_key
+        )
         self._state_attribute: str | None = config.get("state_attribute")
         on_config = config.get("on_values", config.get("on_value"))
         if on_config is None and "off_values" not in config:
@@ -154,14 +160,28 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if await self.coordinator.async_send_command(
-            self._device_id, {self._command_key: self._command_on}
+            self._device_id,
+            self._command(self._command_on, self._optimistic_on),
         ):
             self._attr_is_on = True
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         if await self.coordinator.async_send_command(
-            self._device_id, {self._command_key: self._command_off}
+            self._device_id,
+            self._command(self._command_off, self._optimistic_off),
         ):
             self._attr_is_on = False
             self.async_write_ha_state()
+
+    def _command(
+        self, payload_value: str, optimistic_value: str | None
+    ) -> dict[str, str] | RinnaiCommand:
+        """Build a switch command, separating toggle payloads from state."""
+        payload = {self._command_key: payload_value}
+        if optimistic_value is None:
+            return payload
+        return RinnaiCommand.stateful(
+            payload,
+            {self._optimistic_state_key: optimistic_value},
+        )

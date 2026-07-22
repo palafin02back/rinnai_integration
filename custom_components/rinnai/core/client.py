@@ -24,6 +24,7 @@ from ..const import (
     REFESH_TIME,
 )
 from .config_manager import config_manager
+from .command import build_mqtt_command_message
 from .entity_utils import (
     is_dynamic_mqtt_code_enabled,
     normalize_dynamic_mqtt_code,
@@ -546,13 +547,11 @@ class RinnaiClient:
         device_classid = device_data.get("classID")
         set_topic = MQTT_DEFINITIONS["topics"]["set"].format(mac=device_mac)
         
-        rinnai_message = {
-            "code": auth_code,
-            "enl": [{"data": str(value), "id": key} for key, value in command.items()],
-            "id": device_classid,
-            "ptn": proto["command_pattern"],
-            "sum": proto["command_sum"],
-        }
+        rinnai_message = build_mqtt_command_message(
+            {"authCode": auth_code, "classID": device_classid},
+            command,
+            proto,
+        )
 
         try:
             return await self._mqtt_client.async_publish(

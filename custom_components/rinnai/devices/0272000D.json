@@ -146,8 +146,10 @@
                 "name": "电源",
                 "type": "command_switch",
                 "command_key": "power",
-                "command_on": "31",
-                "command_off": "30",
+                "command_on": "01",
+                "command_off": "01",
+                "optimistic_on": "31",
+                "optimistic_off": "30",
                 "state_attribute": "power",
                 "on_values": [
                     "31"
@@ -161,8 +163,10 @@
                 "name": "节能开关",
                 "type": "command_switch",
                 "command_key": "ecoMode",
-                "command_on": "31",
-                "command_off": "30",
+                "command_on": "01",
+                "command_off": "01",
+                "optimistic_on": "31",
+                "optimistic_off": "30",
                 "state_attribute": "eco_mode",
                 "on_values": [
                     "31"
@@ -191,8 +195,8 @@
                 "name": "循环预约",
                 "type": "command_switch",
                 "command_key": "cycleModeSetting",
-                "command_on": "1",
-                "command_off": "0",
+                "command_on": "01",
+                "command_off": "00",
                 "state_attribute": "cycle_mode",
                 "on_values": [
                     "1",
@@ -227,19 +231,19 @@
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
                 "options_map": {
-                    "普通模式": "0",
-                    "厨房模式": "1",
-                    "淋浴模式": "2"
+                    "普通模式": "00",
+                    "厨房模式": "01",
+                    "淋浴模式": "02"
                 },
                 "value_aliases": {
                     "普通模式": [
-                        "00"
+                        "0"
                     ],
                     "厨房模式": [
-                        "01"
+                        "1"
                     ],
                     "淋浴模式": [
-                        "02"
+                        "2"
                     ]
                 }
             },

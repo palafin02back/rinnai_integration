@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .core.client import RinnaiClient
+from .core.command import RinnaiCommand
 from .const import DOMAIN
 from .models.device import RinnaiDevice, RinnaiDeviceState
 from .core.entity_utils import get_state_value
@@ -217,18 +218,30 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             if any(k in data for k in energy_keys):
                 self.hass.create_task(self._save_energy_data())
 
-    async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
+    async def async_send_command(
+        self,
+        device_id: str,
+        command: RinnaiCommand | dict[str, Any],
+    ) -> bool:
         """Send command to a device."""
-        result = await self.client.send_command(device_id, command)
+        command_request = RinnaiCommand.coerce(command)
+        result = await self.client.send_command(device_id, command_request.payload)
 
         if result and device_id in self._devices:
-            self._devices[device_id].update_state(command, is_command=True)
-            self.async_set_updated_data(self.data)
-            self.data["device_states"][device_id] = self._devices[device_id].state
+            if command_request.optimistic_state:
+                self._devices[device_id].update_state(
+                    command_request.optimistic_state, is_command=True
+                )
+                self.async_set_updated_data(self.data)
+                self.data["device_states"][device_id] = self._devices[device_id].state
 
-            _LOGGER.debug("Command sent successfully to %s: %s", device_id, command)
+            _LOGGER.debug(
+                "Command sent successfully to %s: %s",
+                device_id,
+                command_request.payload,
+            )
         else:
-            _LOGGER.warning("Command Send Failed: %s", command)
+            _LOGGER.warning("Command Send Failed: %s", command_request.payload)
 
         return result
 

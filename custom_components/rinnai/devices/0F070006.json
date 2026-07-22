@@ -73,14 +73,13 @@
                 "state_attribute": "fault_code"
             }
         ],
-        "switch": [
+        "button": [
             {
                 "key": "force_regen",
                 "name": "立即再生",
-                "type": "command_switch",
+                "type": "command_button",
                 "command_key": "forceRegen",
-                "command_on": "01",
-                "command_off": "00"
+                "command_value": "01"
             }
         ]
     }

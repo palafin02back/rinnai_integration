@@ -226,6 +226,7 @@ class StubCoordinator:
         stale_refreshes: int = 0,
     ) -> None:
         self.commands: list[dict[str, Any]] = []
+        self.optimistic_states: list[dict[str, Any] | None] = []
         self.refresh_count = 0
         self.temperature_steps = temperature_steps
         self.stale_refreshes = stale_refreshes
@@ -248,8 +249,9 @@ class StubCoordinator:
     def get_device_state(self, device_id: str) -> Any:
         return self.state
 
-    async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
-        self.commands.append(command)
+    async def async_send_command(self, device_id: str, command: Any) -> bool:
+        self.commands.append(getattr(command, "payload", command))
+        self.optimistic_states.append(getattr(command, "optimistic_state", None))
         return True
 
     async def async_request_refresh(self) -> None:
@@ -648,7 +650,7 @@ def test_e51_operation_mode_maps_observed_values(
 
 
 @pytest.mark.asyncio
-async def test_e51_operation_mode_sends_observed_raw_values(
+async def test_e51_operation_mode_sends_mobile_app_wire_values(
     entity_modules: SimpleNamespace,
 ) -> None:
     config = next(
@@ -664,7 +666,7 @@ async def test_e51_operation_mode_sends_observed_raw_values(
 
     await entity.async_select_option("厨房模式")
 
-    assert coordinator.commands == [{"operationMode": "1"}]
+    assert coordinator.commands == [{"operationMode": "01"}]
 
 
 @pytest.mark.parametrize(
@@ -798,13 +800,21 @@ def test_reservation_sensor_uses_localized_labels_and_notes(
 
 
 @pytest.mark.parametrize(
-    ("switch_key", "on_value", "off_value", "command_on", "command_off"),
+    (
+        "switch_key",
+        "on_value",
+        "off_value",
+        "command_on",
+        "command_off",
+        "optimistic_on",
+        "optimistic_off",
+    ),
     [
-        ("power", "31", "30", "31", "30"),
-        ("eco_mode", "31", "30", "31", "30"),
-        ("cycle_insulation", "31", "30", "31", "30"),
-        ("cycle_mode", "1", "0", "1", "0"),
-        ("pressurization_mode", "31", "30", "31", "30"),
+        ("power", "31", "30", "01", "01", "31", "30"),
+        ("eco_mode", "31", "30", "01", "01", "31", "30"),
+        ("cycle_insulation", "31", "30", "31", "30", None, None),
+        ("cycle_mode", "1", "0", "01", "00", None, None),
+        ("pressurization_mode", "31", "30", "31", "30", None, None),
     ],
 )
 @pytest.mark.asyncio
@@ -815,6 +825,8 @@ async def test_e51_command_switches_match_observed_values(
     off_value: str,
     command_on: str,
     command_off: str,
+    optimistic_on: str | None,
+    optimistic_off: str | None,
 ) -> None:
     config = next(
         item for item in _e51_config()["entities"]["switch"] if item["key"] == switch_key
@@ -839,6 +851,10 @@ async def test_e51_command_switches_match_observed_values(
     assert coordinator.commands == [
         {raw_key: command_on},
         {raw_key: command_off},
+    ]
+    assert coordinator.optimistic_states == [
+        {raw_key: optimistic_on} if optimistic_on is not None else None,
+        {raw_key: optimistic_off} if optimistic_off is not None else None,
     ]
 
 

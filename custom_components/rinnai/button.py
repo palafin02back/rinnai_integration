@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import RinnaiCommand
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,6 @@ class RinnaiCommandButton(RinnaiEntity, ButtonEntity):
         """Send one stateless command and leave state reporting to sensors."""
         if not await self.coordinator.async_send_command(
             self._device_id,
-            {self._command_key: self._command_value},
+            RinnaiCommand.stateless({self._command_key: self._command_value}),
         ):
             _LOGGER.error("Failed to send button command: %s", self._command_key)

@@ -660,11 +660,18 @@ class TestEntityPlatforms:
             "强力节能": "46",
         }
 
-    def test_softener_has_force_regen_switch(self):
+    def test_softener_force_regen_is_stateless_button(self):
         d = load("0F070006")
-        switches = d["entities"].get("switch", [])
-        keys = [s["key"] for s in switches]
-        assert "force_regen" in keys, "0F070006: missing force_regen switch"
+        buttons = d["entities"].get("button", [])
+        assert buttons == [
+            {
+                "key": "force_regen",
+                "name": "立即再生",
+                "type": "command_button",
+                "command_key": "forceRegen",
+                "command_value": "01",
+            }
+        ]
 
     def test_softener_has_required_sensors(self):
         d = load("0F070006")
