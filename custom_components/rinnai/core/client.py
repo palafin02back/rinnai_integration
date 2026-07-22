@@ -85,14 +85,59 @@ class RinnaiClient:
             headers["Authorization"] = f"Basic {self._token}"
         return headers
 
-    def _invalidate_token(self) -> None:
+    def _invalidate_token(self, expected_token: str | None = None) -> bool:
         """Drop the cached token so the next login() re-authenticates.
 
         The API does not distinguish auth failures from other errors, and a
         server-side-invalidated token would otherwise be reused for up to
-        REFESH_TIME (24 h). An extra login per failed cycle is cheap.
+        REFESH_TIME (24 h). ``expected_token`` prevents one failing concurrent
+        request from clearing a token that another request already refreshed.
         """
+        if expected_token is not None and self._token != expected_token:
+            return False
         self._token = None
+        return True
+
+    async def _authenticated_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Perform an authenticated request and refresh a rejected token once."""
+        for attempt in range(2):
+            if not self._token and not await self.login():
+                return None
+
+            request_token = self._token
+            headers = self._http_headers(authenticated=True)
+            async with asyncio.timeout(self.connect_timeout):
+                if method == "GET":
+                    response = await self._session.get(
+                        url, params=params, headers=headers
+                    )
+                elif method == "POST":
+                    response = await self._session.post(
+                        url, data=data, headers=headers
+                    )
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                resp_json = await response.json()
+
+            if resp_json.get("success") is True:
+                return resp_json
+
+            self._invalidate_token(request_token)
+            if attempt == 0:
+                _LOGGER.warning(
+                    "Authenticated Rinnai request was rejected; "
+                    "refreshing the token and retrying once"
+                )
+
+        return resp_json
 
     def register_callback(
         self, device_id: str, callback_func: Callable[[dict[str, Any]], None]
@@ -190,81 +235,69 @@ class RinnaiClient:
 
     async def fetch_devices(self) -> bool:
         """Fetch devices from the Rinnai API."""
-        if not self._token and not await self.login():
-            return False
-
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
-                response = await self._session.get(url, headers=headers)
-                resp_json = await response.json()
+            url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
+            resp_json = await self._authenticated_request("GET", url)
+            if resp_json is None:
+                return False
 
-                if resp_json.get("success") is not True:
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Failed to get devices: %s",
+                    resp_json.get("msg", "Unknown error"),
+                )
+                return False
+
+            devices_list = resp_json.get("data", {}).get("list", [])
+            if not devices_list:
+                _LOGGER.warning("No devices found")
+                return False
+
+            for device in devices_list:
+                device_id = device.get("id")
+                if not device_id:
+                    continue
+
+                self.devices[device_id] = device
+                if device_id not in self.device_states:
+                    self.device_states[device_id] = {}
+
+                device_type = device.get("deviceType")
+                device_config = config_manager.get_config(device_type)
+                self._device_configs[device_id] = device_config
+                if device_config is None:
                     _LOGGER.error(
-                        "Failed to get devices: %s",
-                        resp_json.get("msg", "Unknown error"),
+                        "Device %s (name=%s) has unsupported deviceType '%s' — "
+                        "no entities will be created. To add support, create "
+                        "custom_components/rinnai/devices/%s.json",
+                        device_id, device.get("name"), device_type, device_type,
                     )
-                    self._invalidate_token()
-                    return False
 
-                devices_list = resp_json.get("data", {}).get("list", [])
-                if not devices_list:
-                    _LOGGER.warning("No devices found")
-                    return False
-
-                for device in devices_list:
-                    device_id = device.get("id")
-                    if not device_id:
-                        continue
-
-                    self.devices[device_id] = device
-                    if device_id not in self.device_states:
-                        self.device_states[device_id] = {}
-                    
-                    device_type = device.get("deviceType")
-                    device_config = config_manager.get_config(device_type)
-                    self._device_configs[device_id] = device_config
-                    if device_config is None:
-                        _LOGGER.error(
-                            "Device %s (name=%s) has unsupported deviceType '%s' — "
-                            "no entities will be created. To add support, create "
-                            "custom_components/rinnai/devices/%s.json",
-                            device_id, device.get("name"), device_type, device_type,
-                        )
-
-                return True
+            return True
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error getting devices from Rinnai API: %s", err)
             return False
 
     async def fetch_device_state(self, device_id: str) -> bool:
         """Fetch the state of a device via HTTP API."""
-        if not self._token and not await self.login():
-            return False
-
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
-                response = await self._session.get(
-                    url,
-                    params={"deviceId": device_id},
-                    headers=headers,
+            url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
+            resp_json = await self._authenticated_request(
+                "GET", url, params={"deviceId": device_id}
+            )
+            if resp_json is None:
+                return False
+
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Failed to get device %s: %s",
+                    device_id,
+                    resp_json.get("msg", "Unknown error"),
                 )
-                resp_json = await response.json()
+                return False
 
-                if resp_json.get("success") is not True:
-                    _LOGGER.error(
-                        "Failed to get device %s: %s",
-                        device_id,
-                        resp_json.get("msg", "Unknown error"),
-                    )
-                    self._invalidate_token()
-                    return False
-
-                self.device_states[device_id] = resp_json.get("data", {})
-                return True
+            self.device_states[device_id] = resp_json.get("data", {})
+            return True
 
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error fetching state for device %s: %s", device_id, err)
@@ -279,9 +312,6 @@ class RinnaiClient:
             request_name: The name of the request in config (e.g., 'get_schedule').
             **kwargs: Parameters to substitute in the request template.
         """
-        if not self._token and not await self.login():
-            return None
-
         device = self.devices.get(device_id)
         if not device:
             _LOGGER.error("Device %s not found", device_id)
@@ -345,31 +375,31 @@ class RinnaiClient:
         final_data = substitute(data)
 
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                
-                if method == "GET":
-                    response = await self._session.get(url, params=final_params, headers=headers)
-                elif method == "POST":
-                    response = await self._session.post(url, data=final_data, headers=headers)
-                else:
-                    _LOGGER.error("Unsupported method %s", method)
-                    return None
+            if method not in ("GET", "POST"):
+                _LOGGER.error("Unsupported method %s", method)
+                return None
 
-                resp_json = await response.json()
-                
-                if resp_json.get("success") is not True:
-                    _LOGGER.error(
-                        "Request %s failed. URL: %s, Params: %s, Data: %s, Response: %s",
-                        request_name,
-                        url,
-                        final_params,
-                        final_data,
-                        resp_json
-                    )
-                    return False
+            resp_json = await self._authenticated_request(
+                method,
+                url,
+                params=final_params if method == "GET" else None,
+                data=final_data if method == "POST" else None,
+            )
+            if resp_json is None:
+                return None
 
-                return resp_json.get("data", True)
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Request %s failed. URL: %s, Params: %s, Data: %s, Response: %s",
+                    request_name,
+                    url,
+                    final_params,
+                    final_data,
+                    resp_json,
+                )
+                return False
+
+            return resp_json.get("data", True)
 
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error performing request %s: %s", request_name, err)

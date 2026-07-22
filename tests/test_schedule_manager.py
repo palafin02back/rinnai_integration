@@ -230,6 +230,13 @@ class TestScheduleManagerUpdateScheduleData:
         """Garbage input must not wipe the schedule — save is refused."""
         assert schedule_manager.update_schedule_data(valid_hex, 1, "garbage") is None
 
+    @pytest.mark.parametrize("schedule", ["8-6", "24-25", ","])
+    def test_update_schedule_data_invalid_range_returns_none(
+        self, schedule_manager, valid_hex, schedule
+    ):
+        """Invalid ranges must not replace an existing schedule with off."""
+        assert schedule_manager.update_schedule_data(valid_hex, 1, schedule) is None
+
     def test_update_schedule_data_slash_separator(self, schedule_manager, valid_hex):
         """The documented "/" separator is accepted."""
         result = schedule_manager.update_schedule_data(

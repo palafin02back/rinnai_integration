@@ -4,7 +4,8 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from types import ModuleType
+import time
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -99,3 +100,73 @@ def test_authenticated_headers_include_user_agent(client_module):
         "User-Agent": client_module.API_HEADERS["User-Agent"],
         "Authorization": "Basic token",
     }
+
+
+def test_stale_request_cannot_clear_newer_token(client_module):
+    """Concurrent stale responses must preserve an already refreshed token."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client._token = "fresh-token"
+
+    assert client._invalidate_token("stale-token") is False
+    assert client._token == "fresh-token"
+
+
+def _response(payload):
+    response = MagicMock()
+    response.json = AsyncMock(return_value=payload)
+    return response
+
+
+def _configured_client(client_module, session):
+    client_module.async_get_clientsession = MagicMock(return_value=session)
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule"],
+        features={"heat_type": "1"},
+    )
+    client._token = "stale-token"
+    client._last_login_time = time.time()
+    return client
+
+
+@pytest.mark.asyncio
+async def test_perform_request_refreshes_rejected_token_and_retries(client_module):
+    """A generic API request retries once with a newly issued token."""
+    session = MagicMock()
+    session.get = AsyncMock(
+        side_effect=[
+            _response({"success": False, "msg": "token expired"}),
+            _response({"success": True, "data": {"token": "fresh-token"}}),
+            _response({"success": True, "data": {"schedule": "value"}}),
+        ]
+    )
+    client = _configured_client(client_module, session)
+
+    result = await client.perform_request("device-id", "get_schedule")
+
+    assert result == {"schedule": "value"}
+    assert session.get.await_count == 3
+    first_request, login_request, retry_request = session.get.await_args_list
+    assert first_request.kwargs["headers"]["Authorization"] == "Basic stale-token"
+    assert "Authorization" not in login_request.kwargs["headers"]
+    assert retry_request.kwargs["headers"]["Authorization"] == "Basic fresh-token"
+
+
+@pytest.mark.asyncio
+async def test_perform_request_retries_only_once(client_module):
+    """Repeated API rejection must not cause an infinite login loop."""
+    session = MagicMock()
+    session.get = AsyncMock(
+        side_effect=[
+            _response({"success": False, "msg": "token expired"}),
+            _response({"success": True, "data": {"token": "fresh-token"}}),
+            _response({"success": False, "msg": "still rejected"}),
+        ]
+    )
+    client = _configured_client(client_module, session)
+
+    assert await client.perform_request("device-id", "get_schedule") is False
+    assert session.get.await_count == 3
+    assert client._token is None

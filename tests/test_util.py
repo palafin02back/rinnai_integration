@@ -53,6 +53,12 @@ class TestParseScheduleString:
         with pytest.raises(ValueError):
             parse_schedule_string("06:00-08:00-10:00")
 
+    @pytest.mark.parametrize("schedule", ["8-6", "24-25", "6-6", ",", "/"])
+    def test_invalid_or_empty_range_raises(self, schedule):
+        """Invalid ranges and separator-only input must not clear a schedule."""
+        with pytest.raises(ValueError):
+            parse_schedule_string(schedule)
+
     def test_partially_valid_input_keeps_valid_parts(self):
         # One valid range plus one invalid part → valid part is used
         assert parse_schedule_string("6-8, garbage") == "C00000"
