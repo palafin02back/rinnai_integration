@@ -48,9 +48,12 @@ class RinnaiGenericText(RinnaiEntity, TextEntity):
         self._mode_index = config.get("mode_index")
         self._state_attribute = config.get("state_attribute")
         self._command_key = config.get("command_key")
-        self._attr_native_min = config.get("min")
-        self._attr_native_max = config.get("max")
-        self._attr_pattern = config.get("pattern")
+        if config.get("min") is not None:
+            self._attr_native_min = config["min"]
+        if config.get("max") is not None:
+            self._attr_native_max = config["max"]
+        if config.get("pattern") is not None:
+            self._attr_pattern = config["pattern"]
         self._attr_native_value = "Unknown"
         if extra_state_attributes := config.get("extra_state_attributes"):
             self._attr_extra_state_attributes = dict(extra_state_attributes)
