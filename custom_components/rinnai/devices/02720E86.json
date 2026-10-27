@@ -1,5 +1,5 @@
 {
-    "_comment": "RUS-R**E86系列 热水器",
+    "_comment": "RUS-R**E86 series; E88 uses this shadow protocol",
     "name": "Rinnai Hot Water Heater E86",
     "features": {
         "heat_type": "E86_HOT_WATER",
@@ -8,22 +8,12 @@
         ]
     },
     "supported_requests": [
-        "get_schedule",
-        "save_schedule",
         "air_consumption",
         "gas_water_consumption"
     ],
-    "schedule_config": {
-        "total_length": 34,
-        "status_byte_index": 0,
-        "mode_byte_index": 1,
-        "data_start_byte_index": 2,
-        "bytes_per_mode": 3,
-        "mode_count": 5
-    },
     "processors": {
         "hotWaterTempSetting": [
-            "hex4_to_int"
+            "hex_to_int"
         ],
         "gasConsumption": [
             "hex_to_int",
@@ -40,30 +30,114 @@
         "operation_mode": "operationMode",
         "burning_state": "burningState",
         "gas_usage": "gasConsumption",
-        "fault_code": "faultCode",
-        "error_code": "errorCode",
-        "reservation_mode": "hotWaterReservationMode",
-        "cycle_reservation": "cycleReservationSetting1",
-        "massage_mode": "massageMode",
+        "fault_code": "errorCode",
+        "cycle_reservation": "cycleReservationSetting",
+        "massage_mode": "operationMode",
         "cycle_insulation": "temporaryCycleInsulationSetting",
-        "byte_str": "byteStr",
         "monthly_gas_consumption": "monthlyGasConsumption",
         "yearly_gas_consumption": "yearlyGasConsumption",
         "today_gas_consumption": "todayGasConsumption",
-        "yesterday_gas_consumption": "yesterdayGasConsumption"
+        "yesterday_gas_consumption": "yesterdayGasConsumption",
+        "power": "operationMode",
+        "cycle_reservation_time": "cycleReservationTimeSetting",
+        "cycle_mode": "cycleModeSetting"
     },
     "entities": {
         "water_heater": [
             {
                 "name": "热水器",
                 "key": "main",
-                "min_temp": 35,
-                "max_temp": 65,
+                "min_temp": 32,
+                "max_temp": 60,
                 "step": 1,
-                "command_topic": "hotWaterTempSetting",
-                "temp_format": "hex4",
                 "state_attribute": "hot_water_temp",
-                "operation_mode": "Hot Water"
+                "operation_mode": "Hot Water",
+                "relative_temperature_control": {
+                    "command_key": "hotWaterTempOperate",
+                    "increase": "01",
+                    "decrease": "00",
+                    "step_delay_seconds": 2,
+                    "refresh_retries": 3,
+                    "mode_attribute": "operation_mode",
+                    "mode_mask": "3F",
+                    "allowed_temps_by_mode": {
+                        "20": [
+                            32,
+                            33,
+                            34,
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45,
+                            46,
+                            47,
+                            48,
+                            50,
+                            55,
+                            60
+                        ],
+                        "10": [
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45
+                        ],
+                        "08": [
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44
+                        ],
+                        "04": [
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42,
+                            43,
+                            44,
+                            45,
+                            46,
+                            47,
+                            48,
+                            50,
+                            55,
+                            60
+                        ],
+                        "02": [
+                            32
+                        ],
+                        "01": [
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            40,
+                            41,
+                            42
+                        ]
+                    }
+                }
             }
         ],
         "sensor": [
@@ -81,10 +155,10 @@
                 "entity_category": "diagnostic",
                 "state_attribute": "burning_state",
                 "value_map": {
-                    "30": "Standby",
-                    "31": "Heating Water",
-                    "32": "Burning",
-                    "33": "Error"
+                    "0": "Standby",
+                    "00": "Standby",
+                    "1": "Burning",
+                    "01": "Burning"
                 }
             },
             {
@@ -106,8 +180,14 @@
             {
                 "key": "hot_water_reservation",
                 "name": "热水预约状态",
-                "type": "reservation_sensor",
-                "state_attribute": "byte_str"
+                "type": "generic",
+                "state_attribute": "cycle_reservation",
+                "value_map": {
+                    "0": "Off",
+                    "00": "Off",
+                    "1": "On",
+                    "01": "On"
+                }
             },
             {
                 "key": "monthly_gas_consumption",
@@ -144,34 +224,70 @@
                 "unit_of_measurement": "m³",
                 "entity_category": "diagnostic",
                 "state_attribute": "yesterday_gas_consumption"
+            },
+            {
+                "key": "cycle_reservation_time",
+                "name": "循环预约时段",
+                "type": "schedule_bitmap",
+                "state_attribute": "cycle_reservation_time"
             }
         ],
         "switch": [
+            {
+                "key": "power",
+                "name": "电源",
+                "type": "command_switch",
+                "command_key": "power",
+                "command_on": "01",
+                "command_off": "00",
+                "state_attribute": "power",
+                "state_mask": "80",
+                "on_value": "80"
+            },
             {
                 "key": "massage_mode",
                 "name": "按摩水模式",
                 "type": "command_switch",
                 "command_key": "massageMode",
-                "command_on": "31",
-                "command_off": "30",
+                "command_on": "01",
+                "command_off": "00",
                 "state_attribute": "massage_mode",
-                "on_value": "31"
+                "state_mask": "08",
+                "on_value": "08"
             },
             {
                 "key": "cycle_insulation",
                 "name": "循环保温",
                 "type": "command_switch",
                 "command_key": "temporaryCycleInsulationSetting",
-                "command_on": "31",
-                "command_off": "30",
+                "command_on": "01",
+                "command_off": "00",
                 "state_attribute": "cycle_insulation",
-                "on_value": "31"
+                "on_values": [
+                    "1",
+                    "01"
+                ],
+                "off_values": [
+                    "0",
+                    "00"
+                ]
             },
             {
                 "key": "hot_water_reservation_switch",
                 "name": "热水预约开关",
-                "type": "reservation_switch",
-                "state_attribute": "byte_str"
+                "type": "command_switch",
+                "command_key": "cycleReservationSetting",
+                "command_on": "01",
+                "command_off": "00",
+                "state_attribute": "cycle_reservation",
+                "on_values": [
+                    "1",
+                    "01"
+                ],
+                "off_values": [
+                    "0",
+                    "00"
+                ]
             }
         ],
         "select": [
@@ -181,41 +297,58 @@
                 "type": "command_select",
                 "command_key": "operationMode",
                 "state_attribute": "operation_mode",
+                "state_mask": "3F",
                 "options_map": {
-                    "正常": "00",
-                    "冬季节能": "01",
-                    "自动": "02",
-                    "浓薄水": "03"
+                    "正常": "20",
+                    "淋浴": "10",
+                    "按摩水": "08",
+                    "浴缸": "04",
+                    "低温": "02",
+                    "厨房": "01"
+                },
+                "option_commands": {
+                    "正常": {
+                        "regularMode": "01"
+                    },
+                    "淋浴": {
+                        "showerMode": "01"
+                    },
+                    "按摩水": {
+                        "massageMode": "01"
+                    },
+                    "浴缸": {
+                        "bathtubMode": "01"
+                    },
+                    "低温": {
+                        "lowTempMode": "01"
+                    },
+                    "厨房": {
+                        "kitchenMode": "01"
+                    }
                 }
             },
             {
-                "key": "reservation_mode",
-                "name": "预约模式选择",
-                "options": [
-                    "Mode 1",
-                    "Mode 2",
-                    "Mode 3",
-                    "Mode 4",
-                    "Mode 5"
-                ],
-                "command_type": "schedule_mode",
-                "state_attribute": "byte_str"
-            }
-        ],
-        "text": [
-            {
-                "key": "schedule_mode_4",
-                "name": "自定义1 设置",
-                "mode_index": 4,
-                "command_type": "schedule_data",
-                "state_attribute": "byte_str"
-            },
-            {
-                "key": "schedule_mode_5",
-                "name": "自定义2 设置",
-                "mode_index": 5,
-                "command_type": "schedule_data",
-                "state_attribute": "byte_str"
+                "key": "cycle_mode",
+                "name": "循环模式",
+                "type": "command_select",
+                "command_key": "cycleModeSetting",
+                "state_attribute": "cycle_mode",
+                "options_map": {
+                    "标准": "00",
+                    "舒适": "01",
+                    "节能": "02"
+                },
+                "value_aliases": {
+                    "标准": [
+                        "0"
+                    ],
+                    "舒适": [
+                        "1"
+                    ],
+                    "节能": [
+                        "2"
+                    ]
+                }
             }
         ]
     }

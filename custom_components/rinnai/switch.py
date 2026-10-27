@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.entity_utils import mask_hex_state
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         command_off  – value to send when turning off (e.g. "30")
         state_attribute (optional) – state_mapping key to read current state
         on_value    (optional) – raw value that means "on"; defaults to command_on
+        state_mask  (optional) – hexadecimal mask for flags packed into a state byte
     """
 
     def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
@@ -109,6 +111,8 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         self._command_on: str = config["command_on"]
         self._command_off: str = config["command_off"]
         self._state_attribute: str | None = config.get("state_attribute")
+        mask = config.get("state_mask")
+        self._state_mask = int(mask, 16) if mask is not None else None
         on_config = config.get("on_values", config.get("on_value"))
         if on_config is None and "off_values" not in config:
             on_config = self._command_on
@@ -146,6 +150,8 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
     def _update_attributes(self) -> None:
         if self._state_attribute:
             val = self.get_state_value(self._state_attribute)
+            if self._state_mask is not None:
+                val = mask_hex_state(val, self._state_mask)
             normalized = self._normalize_state_value(val)
             if normalized is None:
                 self._attr_is_on = None

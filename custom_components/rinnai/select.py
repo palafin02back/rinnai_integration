@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.entity_utils import mask_hex_state
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -138,6 +139,8 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
         self._option_commands: dict[str, dict[str, Any]] = config.get("option_commands", {})
         self._value_to_label = self._build_value_to_label_map(config)
         self._state_attribute: str | None = config.get("state_attribute")
+        mask = config.get("state_mask")
+        self._state_mask = int(mask, 16) if mask is not None else None
         self._attr_options = list(self._options_map.keys())
         self._update_attributes()
 
@@ -161,6 +164,8 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
         if not self._state_attribute:
             return
         raw_val = self.get_state_value(self._state_attribute)
+        if self._state_mask is not None:
+            raw_val = mask_hex_state(raw_val, self._state_mask)
         state_value = str(raw_val) if raw_val is not None else ""
         self._attr_current_option = self._value_to_label.get(state_value)
 

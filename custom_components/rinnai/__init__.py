@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 
 from .core.client import RinnaiClient
 from .const import (
@@ -91,6 +92,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: RinnaiConfigEntry) -> bo
 
     # Store the coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # E86/E88 report one hourly bitmap, not the old five-slot HTTP schedule.
+    retired_ids = {
+        f"{device.device_id}_{key}"
+        for device in coordinator.data["devices"].values()
+        if device.device_type in {"02720E86", "0272000E"}
+        for key in ("reservation_mode", "schedule_mode_4", "schedule_mode_5")
+    }
+    if retired_ids:
+        registry = er.async_get(hass)
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if entity.unique_id in retired_ids:
+                registry.async_remove(entity.entity_id)
 
     # Set up all supported platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -73,6 +73,7 @@ class TestJsonStructure:
         assert "heat_type" in d["features"], \
             f"{device_type}: features.heat_type missing"
 
+
     @pytest.mark.parametrize("device_type", ALL_DEVICE_TYPES)
     def test_entity_configs_have_key_and_name(self, device_type):
         d = load(device_type)
@@ -109,7 +110,8 @@ class TestStateMappingConsistency:
         "faultCode", "errorCode", "errorType",
         # E-series extras
         "massageMode", "cycleModeSetting", "temporaryCycleInsulationSetting",
-        "cycleReservationSetting1", "frozenState", "ecoHeatLoad",
+        "cycleReservationSetting", "cycleReservationSetting1", "cycleReservationTimeSetting",
+        "frozenState", "ecoHeatLoad",
         "pressurizationMode",
         # water softener
         "workMode", "saltLevel", "saltLow", "saltAlarm",
@@ -249,7 +251,10 @@ class TestProcessorChains:
 
     # ── E-series ─────────────────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
+    @pytest.mark.parametrize(
+        "device_type",
+        [model for model in E_SERIES_TYPES if model not in {"02720E86", "0272000E"}],
+    )
     def test_e_series_hot_water_temp_hex_to_int(self, device_type):
         """hotWaterTempSetting hex4_to_int: "2A00" → 42°C (E-series uses 4-byte hex)"""
         d = load(device_type)
@@ -327,12 +332,25 @@ class TestTemperatureEncoding:
         assert fmt == "hex2", \
             f"{device_type}: water_heater should use hex2, got '{fmt}'"
 
-    @pytest.mark.parametrize("device_type", E_SERIES_TYPES)
+    @pytest.mark.parametrize(
+        "device_type",
+        [model for model in E_SERIES_TYPES if model not in {"02720E86", "0272000E"}],
+    )
     def test_e_series_water_heater_uses_hex4(self, device_type):
         d = load(device_type)
         wh = d["entities"]["water_heater"][0]
         assert wh.get("temp_format") == "hex4", \
             f"{device_type}: water_heater should declare temp_format=hex4"
+
+    @pytest.mark.parametrize("device_type", ["02720E86", "0272000E"])
+    def test_e86_e88_water_heater_uses_relative_temperature_control(self, device_type):
+        d = load(device_type)
+        wh = d["entities"]["water_heater"][0]
+        assert wh.get("temp_format", "hex2") != "hex4"
+        control = wh["relative_temperature_control"]
+        assert control["command_key"] == "hotWaterTempOperate"
+        assert control["increase"] == "01"
+        assert control["decrease"] == "00"
 
     @pytest.mark.parametrize("device_type", E32_TYPES)
     def test_e32_water_heater_does_not_use_hex4(self, device_type):
@@ -815,15 +833,15 @@ class TestEndToEndStatePipeline:
         assert result["heatingBurningTimes"] == 113       # no multiply, raw count
 
     def test_e86_full_inf_payload(self):
-        """E86: water heater temp with hex4_to_int ("2A00" → 42°C)."""
+        """E86: water heater temp with hex_to_int ("29" → 41°C)."""
         d = load("02720E86")
         raw = {
-            "hotWaterTempSetting": "2A00",   # 42°C in hex4 format
+            "hotWaterTempSetting": "29",        # 41°C in 1-byte hex format
             "gasConsumption":      "00004E20",  # 20000 dec → 2.0 m³
-            "burningState":        "30",
+            "burningState":        "0",
         }
         result = process_data(raw, d["processors"])
-        assert result["hotWaterTempSetting"] == 42
+        assert result["hotWaterTempSetting"] == 41
         assert result["gasConsumption"] == pytest.approx(2.0)
 
     def test_e51_observed_full_inf_payload(self):
@@ -920,8 +938,8 @@ class TestWaterHeaterTempRanges:
         "0F06000C": (35, 65),  # G56 boiler DHW
         "0F060016": (35, 65),
         "0F060G55": (35, 65),
-        "02720E86": (35, 65),  # E86
-        "0272000E": (35, 65),  # E88
+        "02720E86": (32, 60),  # E86/E88 legacy App limits
+        "0272000E": (32, 60),  # E88 shadow protocol
         "02720022": (32, 65),  # E89 – bath injection, higher minimum
         "02720010": (35, 65),  # E65
         "0272001C": (35, 65),  # E75

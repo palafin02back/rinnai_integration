@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from .core.entity_utils import mask_hex_state
+
 _LOGGER = logging.getLogger(__name__)
 
 GetStateValue = Callable[[str], Any]
@@ -203,6 +205,8 @@ def _allowed_temperatures_for_current_mode(
 
     mode_attribute = control.get("mode_attribute", "operation_mode")
     raw_mode = get_state_value(mode_attribute)
+    if (mask := control.get("mode_mask")) is not None:
+        raw_mode = mask_hex_state(raw_mode, int(mask, 16))
     if raw_mode is None:
         _LOGGER.warning(
             "Device %s: cannot validate temperature without %s",

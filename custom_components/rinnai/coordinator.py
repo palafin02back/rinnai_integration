@@ -242,6 +242,9 @@ class RinnaiCoordinator(DataUpdateCoordinator):
 
     async def async_refresh_schedule(self, device_id: str) -> None:
         """Refresh schedule info for a device."""
+        device = self._devices.get(device_id)
+        if not device or not device.config or "get_schedule" not in device.config.supported_requests:
+            return
         _LOGGER.debug("Refreshing schedule info for device: %s", device_id)
         schedule_data = await self.client.get_schedule_info(device_id)
         if schedule_data:
