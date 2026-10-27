@@ -127,3 +127,54 @@ async def test_power_and_mode_publish_verified_commands(entity_modules, profile)
     assert coordinator.commands == [{'showerMode': '01'}, {'power': '00'}]
     assert select._attr_current_option == '淋浴'
     assert power._attr_is_on is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('mode', 'current', 'requested', 'expected'), [
+    ('A0', 48, 49, 50),
+    ('E0', 50, 53, 55),
+    ('90', 44, 46, 45),
+    ('81', 41, 43, 42),
+])
+async def test_unsupported_temperature_uses_nearest_mode_setpoint(
+    entity_modules, profile, mode, current, requested, expected
+):
+    config = entity_config(profile, 'water_heater', 'main')
+    control = config['relative_temperature_control']
+    control['step_delay_seconds'] = 0
+    allowed = control['allowed_temps_by_mode'][f'{int(mode, 16) & 0x3F:02X}']
+    coordinator = StubCoordinator(
+        {'hotWaterTempSetting': current, 'operationMode': mode},
+        profile['state_mapping'],
+        temperature_steps=allowed,
+    )
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
+        coordinator, 'dev1', config
+    )
+
+    await entity.async_set_temperature(temperature=requested)
+
+    assert coordinator.commands == [{'hotWaterTempOperate': '01'}]
+    assert entity._attr_target_temperature == expected
+    assert entity._attr_extra_state_attributes['温度提示'] == (
+        f'不支持{requested}℃，已切换至最近支持的{expected}℃'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', [None, 'invalid', '00'])
+async def test_temperature_adjustment_does_not_bypass_unknown_mode(
+    entity_modules, profile, mode
+):
+    coordinator = StubCoordinator(
+        {'hotWaterTempSetting': 48, 'operationMode': mode},
+        profile['state_mapping'],
+    )
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
+        coordinator, 'dev1', entity_config(profile, 'water_heater', 'main')
+    )
+
+    await entity.async_set_temperature(temperature=49)
+
+    assert coordinator.commands == []
+    assert entity._attr_target_temperature == 48

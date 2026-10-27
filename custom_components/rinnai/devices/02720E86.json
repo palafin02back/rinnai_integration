@@ -58,6 +58,8 @@
                     "decrease": "00",
                     "step_delay_seconds": 2,
                     "refresh_retries": 3,
+                    "adjust_unsupported_temperature": true,
+                    "unsupported_temperature_template": "不支持{requested}℃，已切换至最近支持的{temperature}℃",
                     "mode_attribute": "operation_mode",
                     "mode_mask": "3F",
                     "allowed_temps_by_mode": {
