@@ -21,6 +21,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import CONF_EXPERIMENTAL_SENSORS, DOMAIN
 from .coordinator import RinnaiCoordinator
 from .core.entity_utils import get_hex_byte
+from .core.util import decode_schedule_bitmap, format_schedule_string
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ async def async_setup_entry(
                     entities.append(RinnaiHeatingReservationSensor(coordinator, device_id, config))
                 elif sensor_type == "circulation_sensor":
                     entities.append(RinnaiCirculationSensor(coordinator, device_id, config))
+                elif sensor_type == "schedule_bitmap":
+                    entities.append(RinnaiScheduleBitmapSensor(coordinator, device_id, config))
                 else:
                     entities.append(RinnaiGenericSensor(coordinator, device_id, config, experimental_enabled))
 
@@ -219,6 +222,31 @@ class RinnaiHeatingReservationSensor(RinnaiEntity, SensorEntity):
                     attrs["current_schedule"] = schedule_str
         
         self._attr_extra_state_attributes = attrs
+
+
+class RinnaiScheduleBitmapSensor(RinnaiEntity, SensorEntity):
+    """Expose the device's single 24-hour circulation reservation bitmap."""
+
+    def __init__(self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any]) -> None:
+        super().__init__(coordinator, device_id, config)
+        self._state_attribute = config["state_attribute"]
+        self._update_attributes()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    def _update_attributes(self) -> None:
+        raw_value = self.get_state_value(self._state_attribute)
+        if not isinstance(raw_value, str):
+            self._attr_native_value = None
+            return
+        normalized = "".join(raw_value.split()).upper()
+        if len(normalized) != 6 or any(char not in "0123456789ABCDEF" for char in normalized):
+            self._attr_native_value = None
+        else:
+            self._attr_native_value = format_schedule_string(decode_schedule_bitmap(normalized))
 
 
 class RinnaiCirculationSensor(RinnaiEntity, SensorEntity):

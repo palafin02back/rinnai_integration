@@ -93,9 +93,9 @@ All device-specific behavior is defined in `devices/<deviceType>.json` (e.g., `0
 | `0F06000C.json` | G56 采暖炉 | climate (5 modes), water_heater, schedule, energy |
 | `0F060016.json` | G58 采暖炉 | same as G56 |
 | `0F060G55.json` | G55 采暖炉 | same as G56 |
-| `02720E86.json` | E86 热水器 | water_heater (hex4 temp), massage, cycle insulation, schedule |
-| `0272000E.json` | E88 热水器 | same feature set as E86 |
-| `02720022.json` | E89 热水器 | same + bath injection, min_temp=32°C |
+| `02720E86.json` | E86 热水器 / E88 shadow | relative temperature, bitmask modes, direct circulation bitmap |
+| `0272000E.json` | E88 热水器 | same E86 wire protocol |
+| `02720022.json` | E89 热水器 | hex4 setpoint, bath injection, HTTP schedule |
 | `02720010.json` | E65 热水器 | massage, 浓薄水 mode |
 | `0272001C.json` | E75 热水器 | massage, 浓薄水 mode |
 | `02720E76.json` | E76 热水器 | mid-range |
@@ -109,10 +109,13 @@ All device-specific behavior is defined in `devices/<deviceType>.json` (e.g., `0
 
 Water heater `command_topic` values are hex-encoded integers:
 - `temp_format: "hex2"` — G56/boiler style: 40°C → `"28"`
-- `temp_format: "hex4"` — E-series water heater style: 40°C → `"2800"`
+- `temp_format: "hex4"` — selected E-series profiles: 40°C → `"2800"` (not E86/E88)
 
 The `water_heater.py` and `number.py` both read `temp_format` from the entity config to pick the correct encoding. Default is `"hex2"`.
 
+E86/E88 use `hex_to_int` for their 1-byte `hotWaterTempSetting` report and adjust
+setpoints via relative `hotWaterTempOperate` steps.
+See `devices/README.md` for the bitmask and circulation-reservation interface.
 ### MQTT Protocol
 
 - Topics: `rinnai/SR/01/SR/{mac}/{inf|stg|set|sys|res}/`

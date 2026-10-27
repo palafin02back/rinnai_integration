@@ -43,6 +43,17 @@ def get_hex_byte(value: Any, byte_index: int) -> str | None:
     return normalized[start : start + 2]
 
 
+def mask_hex_state(value: Any, mask: int) -> str | None:
+    """Extract state flags without treating a missing or malformed report as off."""
+    try:
+        number = value if isinstance(value, int) else int(str(value), 16)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return f"{number & mask:02X}"
+
+
 def normalize_dynamic_mqtt_code(
     code: Any,
     reserved_codes: set[str],

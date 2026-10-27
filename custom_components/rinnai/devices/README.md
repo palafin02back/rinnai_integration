@@ -87,4 +87,34 @@
 - `state_mapping`: HA 属性名 → API 字段名映射
 - `entities`: 各平台实体配置（water_heater/climate/sensor/switch/select/text）
 - `supported_requests`: 支持的 HTTP 请求类型
-- `schedule_config`: 预约时间表字节布局（如支持预约功能）
+- `schedule_config`: HTTP 预约时间表字节布局；E86/E88 不使用此配置
+
+## E86/E88 protocol corrections (App 3.12.0)
+
+E88's `shadowClassId` is E86. A physical E88 may therefore report both cloud identifiers
+as `02720E86`, with its display identity supplied by `userSelectedType`.
+Keep the two profiles equivalent; do not force a different cloud identifier.
+
+| State | Encoding |
+|---|---|
+| `hotWaterTempSetting` | 1-byte hex (`"29"` → 41°C, `"2A"` → 42°C) decoded with `hex_to_int` |
+| `operationMode` | Power `80`, normal `20`, shower `10`, massage `08`, bathtub `04`, low `02`, kitchen `01`; `40` is an independent circulation flag |
+| `burningState` | `0`/`00` idle; `1`/`01` burning |
+| `errorCode` | Fault code; do not read the absent `faultCode` field |
+| `temporaryCycleInsulationSetting` | `0`/`1`; commands are padded `00`/`01` |
+| `cycleReservationSetting` | Direct reservation enable flag |
+| `cycleReservationTimeSetting` | Three space-separated or compact bytes; each byte's least-significant bit starts its eight-hour group |
+
+`state_mask` on switches/selects is a hexadecimal string. It extracts packed flags
+without changing the stored raw report. Relative temperature configuration can use
+`mode_mask` to ignore independent flags when choosing allowed setpoints.
+
+The `schedule_bitmap` sensor normalizes the 3-byte `cycleReservationTimeSetting` report
+before decoding hours. For example, `C0 C0 0F` means 06:00–08:00 and 14:00–20:00.
+Missing or malformed data remains unknown; it must not become an invented all-off schedule.
+E86/E88 reservation reads require no HTTP request. The five-preset layout belongs
+to other device families and must not be reused here.
+
+Daily/monthly/yearly `airConsumption` HTTP series already use m³; do not divide them
+by 10000. The scaling of the separate raw MQTT `gasConsumption` counter is independent.
+
