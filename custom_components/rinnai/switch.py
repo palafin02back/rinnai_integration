@@ -14,6 +14,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .core.entity_utils import get_hex_byte, mask_hex_state
+
+from .core.command import RinnaiCommand, build_conditional_payload
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,13 +35,14 @@ async def async_setup_entry(
             continue
 
         if switch_configs := device.config.entities.get("switch"):
-            mode_lock = asyncio.Lock()
             for config in switch_configs:
                 switch_type = config.get("type", "generic")
                 if switch_type == "reservation_switch":
                     entities.append(RinnaiHeatingReservationSwitch(coordinator, device_id, config))
+                elif switch_type == "c66l_heating_reservation":
+                    entities.append(RinnaiC66LHeatingReservationSwitch(coordinator, device_id, config))
                 elif switch_type == "c66l_heating_mode":
-                    entities.append(RinnaiC66LModeSwitch(coordinator, device_id, config, mode_lock))
+                    entities.append(RinnaiC66LModeSwitch(coordinator, device_id, config, device.schedule_lock))
                 elif switch_type == "command_switch":
                     entities.append(RinnaiCommandSwitch(coordinator, device_id, config))
 
@@ -71,11 +74,13 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        await self._set_reservation_state(True)
+        async with self._device.schedule_lock:
+            await self._set_reservation_state(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        await self._set_reservation_state(False)
+        async with self._device.schedule_lock:
+            await self._set_reservation_state(False)
 
     async def _set_reservation_state(self, is_on: bool) -> None:
         if not self.schedule_manager:
@@ -90,12 +95,43 @@ class RinnaiHeatingReservationSwitch(RinnaiEntity, SwitchEntity):
 
         _LOGGER.debug("Setting reservation state to %s", "On" if is_on else "Off")
 
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
-            await self.coordinator.async_refresh_schedule(self._device_id)
+        if is_on:
+            await self._prepare_enable()
+
+        if await self.coordinator.client.save_schedule_hour(
+            self._device_id,
+            new_hex,
+            schedule_channel=self.schedule_channel,
+        ):
+            await self.coordinator.async_refresh_schedule(
+                self._device_id, schedule_channel=self.schedule_channel
+            )
             self._attr_is_on = is_on
             self.async_write_ha_state()
         else:
             _LOGGER.error("Failed to set reservation state")
+
+
+    async def _prepare_enable(self) -> None:
+        """Apply device-specific prerequisites before enabling a reservation."""
+
+
+class RinnaiC66LHeatingReservationSwitch(RinnaiHeatingReservationSwitch):
+    """The C66L app clears active outdoor and eco modes before heating on a timer."""
+
+    async def _prepare_enable(self) -> None:
+        command = {
+            key: "55"
+            for key in ("ecoMode", "outdoorMode")
+            if str(self.get_state_value(key)).upper() == "AA"
+        }
+        if command and not await self.coordinator.async_send_command(self._device_id, command):
+            raise HomeAssistantError("Could not clear the C66L heating modes")
+        if not await self.coordinator.client.perform_request(
+            self._device_id, "update_flow_parameter", success_only=True,
+            json_fields={"outDoorModeC66L": "55", "ecoModeC66L": "55"},
+        ):
+            _LOGGER.warning("C66L heating reservation preference update failed")
 
 
 class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
@@ -105,6 +141,8 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         command_key  – ENL parameter name (e.g. "power")
         command_on   – value to send when turning on  (e.g. "31")
         command_off  – value to send when turning off (e.g. "30")
+        command_on_payload / command_off_payload (optional) – atomic ENL payloads
+        command_on_rules / command_off_rules (optional) – state-conditional fields
         state_attribute (optional) – state_mapping key to read current state
         on_value    (optional) – raw value that means "on"; defaults to command_on
         state_mask  (optional) – hexadecimal mask for flags packed into a state byte
@@ -115,6 +153,15 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         self._command_key: str = config["command_key"]
         self._command_on: str = config["command_on"]
         self._command_off: str = config["command_off"]
+        self._command_on_payload = config.get("command_on_payload")
+        self._command_off_payload = config.get("command_off_payload")
+        self._command_on_rules = config.get("command_on_rules", [])
+        self._command_off_rules = config.get("command_off_rules", [])
+        self._optimistic_on: str | None = config.get("optimistic_on")
+        self._optimistic_off: str | None = config.get("optimistic_off")
+        self._optimistic_state_key: str = config.get(
+            "optimistic_state_key", self._command_key
+        )
         self._state_attribute: str | None = config.get("state_attribute")
         mask = config.get("state_mask")
         self._state_mask = int(mask, 16) if mask is not None else None
@@ -165,17 +212,50 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if await self.coordinator.async_send_command(
-            self._device_id, {self._command_key: self._command_on}
+            self._device_id,
+            self._command(
+                self._command_on,
+                self._optimistic_on,
+                self._command_on_payload,
+                self._command_on_rules,
+            ),
         ):
             self._attr_is_on = True
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         if await self.coordinator.async_send_command(
-            self._device_id, {self._command_key: self._command_off}
+            self._device_id,
+            self._command(
+                self._command_off,
+                self._optimistic_off,
+                self._command_off_payload,
+                self._command_off_rules,
+            ),
         ):
             self._attr_is_on = False
             self.async_write_ha_state()
+
+    def _command(
+        self,
+        payload_value: str,
+        optimistic_value: str | None,
+        configured_payload: dict[str, Any] | None,
+        rules: list[dict[str, Any]],
+    ) -> dict[str, str] | RinnaiCommand:
+        """Build a switch command, separating toggle payloads from state."""
+        payload = (
+            dict(configured_payload)
+            if configured_payload is not None
+            else {self._command_key: payload_value}
+        )
+        payload = build_conditional_payload(payload, rules, self.get_state_value)
+        if optimistic_value is None:
+            return payload
+        return RinnaiCommand.stateful(
+            payload,
+            {self._optimistic_state_key: optimistic_value},
+        )
 
 
 class RinnaiC66LModeSwitch(RinnaiCommandSwitch):
@@ -243,8 +323,11 @@ class RinnaiC66LModeSwitch(RinnaiCommandSwitch):
             return
         if get_hex_byte(schedule, 0) is None:
             raise HomeAssistantError("Invalid C66L heating reservation data")
-        if not await self.coordinator.client.save_schedule_hour(self._device_id, "00" + schedule[2:]):
+        if not await self.coordinator.client.save_schedule_hour(
+            self._device_id, "00" + schedule[2:], schedule_channel="heating"
+        ):
             raise HomeAssistantError("Could not disable the C66L heating reservation")
+        await self.coordinator.async_refresh_schedule(self._device_id, schedule_channel="heating")
 
     def _flow_preferences(self, enable: bool) -> dict[str, str]:
         """The app stores outdoor and eco selections under separate HTTP keys."""

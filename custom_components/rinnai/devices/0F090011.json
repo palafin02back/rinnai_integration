@@ -1,151 +1,56 @@
 {
-    "_comment": "室内温控器（空气源热泵配套）",
-    "name": "Rinnai Heat Pump Thermostat",
-    "features": {
-        "heat_type": "HP_THERMOSTAT",
-        "energy_data_keys": []
-    },
-    "supported_requests": [],
-    "processors": {
-        "roomTempSetting": [
-            "hex_to_int"
-        ],
-        "roomTemperature": [
-            "hex_to_int"
-        ],
-        "hpUnitColdTempSetting": [
-            "hex_to_int"
-        ],
-        "hpUnitHotTempSetting": [
-            "hex_to_int"
-        ]
-    },
-    "state_mapping": {
-        "room_temp_setting": "roomTempSetting",
-        "room_temperature": "roomTemperature",
-        "operation_mode": "operationMode",
-        "thermal_status": "thermalStatus",
-        "fault_code": "faultCode",
-        "error_code": "errorCode",
-        "hp_unit_operation_mode": "hpUnitOperationMode",
-        "hp_unit_cold_temp": "hpUnitColdTempSetting",
-        "hp_unit_hot_temp": "hpUnitHotTempSetting",
-        "hp_unit_power": "hpUnitPower",
-        "hp_unit_connect": "hpUnitConnect",
-        "heating_reservation_time": "heatingReservationTime"
-    },
-    "entities": {
-        "sensor": [
-            {
-                "key": "room_temperature",
-                "name": "室内温度",
-                "device_class": "temperature",
-                "state_class": "measurement",
-                "unit_of_measurement": "°C",
-                "state_attribute": "room_temperature"
-            },
-            {
-                "key": "room_temp_setting",
-                "name": "室内温度设定",
-                "device_class": "temperature",
-                "state_class": "measurement",
-                "unit_of_measurement": "°C",
-                "state_attribute": "room_temp_setting"
-            },
-            {
-                "key": "hp_unit_cold_temp",
-                "name": "制冷温度设定",
-                "device_class": "temperature",
-                "state_class": "measurement",
-                "unit_of_measurement": "°C",
-                "state_attribute": "hp_unit_cold_temp"
-            },
-            {
-                "key": "hp_unit_hot_temp",
-                "name": "制热温度设定",
-                "device_class": "temperature",
-                "state_class": "measurement",
-                "unit_of_measurement": "°C",
-                "state_attribute": "hp_unit_hot_temp"
-            },
-            {
-                "key": "thermal_status",
-                "name": "热泵运行状态",
-                "entity_category": "diagnostic",
-                "state_attribute": "thermal_status"
-            },
-            {
-                "key": "fault_code",
-                "name": "故障码",
-                "entity_category": "diagnostic",
-                "state_attribute": "fault_code"
-            },
-            {
-                "key": "hp_unit_connect",
-                "name": "热泵主机连接状态",
-                "entity_category": "diagnostic",
-                "state_attribute": "hp_unit_connect"
-            }
-        ],
-        "switch": [
-            {
-                "key": "hp_unit_power",
-                "name": "热泵开关",
-                "type": "command_switch",
-                "command_key": "hpUnitPower",
-                "command_on": "01",
-                "command_off": "00",
-                "state_attribute": "hp_unit_power",
-                "on_value": "01"
-            }
-        ],
-        "select": [
-            {
-                "key": "hp_unit_operation_mode",
-                "name": "热泵运行模式",
-                "type": "command_select",
-                "command_key": "hpUnitOperationMode",
-                "state_attribute": "hp_unit_operation_mode",
-                "options_map": {
-                    "制热": "00",
-                    "制冷": "01"
-                }
-            }
-        ],
-        "number": [
-            {
-                "key": "room_temp_setpoint",
-                "name": "室内温度设定",
-                "command_key": "roomTempSetting",
-                "state_attribute": "room_temp_setting",
-                "min": 5,
-                "max": 35,
-                "step": 1,
-                "unit_of_measurement": "°C",
-                "temp_format": "hex2"
-            },
-            {
-                "key": "hp_unit_cold_temp_setpoint",
-                "name": "制冷温度设定",
-                "command_key": "hpUnitColdTempSetting",
-                "state_attribute": "hp_unit_cold_temp",
-                "min": 16,
-                "max": 30,
-                "step": 1,
-                "unit_of_measurement": "°C",
-                "temp_format": "hex2"
-            },
-            {
-                "key": "hp_unit_hot_temp_setpoint",
-                "name": "制热温度设定",
-                "command_key": "hpUnitHotTempSetting",
-                "state_attribute": "hp_unit_hot_temp",
-                "min": 16,
-                "max": 30,
-                "step": 1,
-                "unit_of_measurement": "°C",
-                "temp_format": "hex2"
-            }
-        ]
-    }
+  "name": "Rinnai Heat Pump Thermostat",
+  "features": {"heat_type": "HP_THERMOSTAT"},
+  "supported_requests": [],
+  "processors": {
+    "heatingTempSetting": ["hex_fraction_to_float"],
+    "roomTemperature": ["hex_fraction_to_float"],
+    "heatingOutletWaterTemp": ["hex_fraction_to_float"],
+    "outdoorTemperature": ["hex_fraction_to_float"],
+    "heatingReturnWaterTemp": ["hex_fraction_to_float"]
+  },
+  "state_mapping": {
+    "power": "power",
+    "fan_state": "fanState",
+    "operation_mode": "operationMode",
+    "rapid_heating": "rapidHeating",
+    "heating_reservation": "heatingReservationSetting",
+    "heating_temp": "heatingTempSetting",
+    "room_temperature": "roomTemperature",
+    "heating_outlet_water_temp": "heatingOutletWaterTemp",
+    "outdoor_temperature": "outdoorTemperature",
+    "heating_return_water_temp": "heatingReturnWaterTemp",
+    "fault_code": "faultCode",
+    "error_code": "errorCode"
+  },
+  "entities": {
+    "sensor": [
+      {"key": "room_temperature", "name": "室内温度", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "state_attribute": "room_temperature"},
+      {"key": "heating_outlet_water_temp", "name": "采暖出水温度", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "state_attribute": "heating_outlet_water_temp"},
+      {"key": "outdoor_temperature", "name": "室外温度", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "state_attribute": "outdoor_temperature"},
+      {"key": "heating_return_water_temp", "name": "采暖回水温度", "device_class": "temperature", "state_class": "measurement", "unit_of_measurement": "°C", "state_attribute": "heating_return_water_temp"},
+      {"key": "fault_code", "name": "故障码", "entity_category": "diagnostic", "state_attribute": "fault_code"}
+    ],
+    "switch": [
+      {"key": "power", "name": "电源", "type": "command_switch", "command_key": "power", "command_on": "01", "command_off": "00", "state_attribute": "power", "on_values": ["1", "01"]},
+      {"key": "rapid_heating", "name": "快速采暖", "type": "command_switch", "command_key": "rapidHeating", "command_on": "01", "command_off": "00", "state_attribute": "rapid_heating", "on_values": ["1", "01"]},
+      {"key": "heating_reservation", "name": "采暖预约", "type": "command_switch", "command_key": "heatingReservationSetting", "command_on": "01", "command_off": "00", "state_attribute": "heating_reservation", "on_values": ["1", "01"]}
+    ],
+    "select": [
+      {
+        "key": "fan_state", "name": "风速", "type": "command_select", "command_key": "fanState", "state_attribute": "fan_state",
+        "options_map": {"自动": "00", "低速": "01", "中速": "02", "高速": "03"}
+      },
+      {
+        "key": "operation_mode", "name": "运行模式", "type": "command_select", "command_key": "operationMode", "state_attribute": "operation_mode",
+        "options_map": {"自动": "00", "制热": "01", "制冷": "02", "送风": "03", "除湿": "04"}
+      }
+    ],
+    "number": [
+      {
+        "key": "heating_temp_setpoint", "name": "采暖温度设定", "command_key": "heatingTempSetting", "state_attribute": "heating_temp",
+        "min": 5, "max": 35, "step": 0.5, "unit_of_measurement": "°C", "temp_format": "hex_fraction"
+      }
+    ]
+  }
 }

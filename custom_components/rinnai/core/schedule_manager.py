@@ -19,13 +19,24 @@ class RinnaiScheduleManager:
         self.mode_byte_index = config.get("mode_byte_index", 1)
         self.data_start_byte_index = config.get("data_start_byte_index", 2)
         self.bytes_per_mode = config.get("bytes_per_mode", 3)
+        self.fixed_preset_data = config.get("fixed_preset_data", "")
+        self.preserve_status_on_select = config.get("preserve_status_on_select", False)
         self.mode_count = config.get("mode_count", 5)
 
     def validate_hex(self, hex_str: str | None) -> bool:
         """Validate hex string length."""
-        if not hex_str or len(hex_str) < self.total_length:
-            return False
-        return True
+        return (
+            isinstance(hex_str, str)
+            and len(hex_str) >= self.total_length
+            and len(hex_str) % 2 == 0
+            and all(c in "0123456789abcdefABCDEF" for c in hex_str)
+        )
+
+    def _apply_fixed_presets(self, hex_str: str) -> str:
+        """Restore the app-defined slots when saving a mode or editing its hours."""
+        start = self.data_start_byte_index * 2
+        end = start + len(self.fixed_preset_data)
+        return hex_str[:start] + self.fixed_preset_data + hex_str[end:]
 
     def parse_status(self, hex_str: str) -> bool:
         """Parse status (on/off) from hex string."""
@@ -92,7 +103,7 @@ class RinnaiScheduleManager:
         try:
             start = self.mode_byte_index * 2
             new_byte = f"{mode_index:02X}"
-            return hex_str[:start] + new_byte + hex_str[start + 2 :]
+            return self._apply_fixed_presets(hex_str[:start] + new_byte + hex_str[start + 2 :])
         except ValueError:
             return None
 
@@ -111,6 +122,8 @@ class RinnaiScheduleManager:
             start_char = start_byte * 2
             length_char = self.bytes_per_mode * 2
             
-            return hex_str[:start_char] + new_mode_hex + hex_str[start_char + length_char :]
+            return self._apply_fixed_presets(
+                hex_str[:start_char] + new_mode_hex + hex_str[start_char + length_char :]
+            )
         except ValueError:
             return None

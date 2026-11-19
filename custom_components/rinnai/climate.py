@@ -74,6 +74,10 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         self._off_mode = defaults.get("off_mode", "standby")
         self._on_mode = defaults.get("on_mode", "normal")
         self._action_attribute = defaults.get("action_attribute", "burning_state")
+        # State attribute to show as target temp when temp_settings has no
+        # entry for the current mode (e.g. standby); device-specific, so it
+        # comes from the JSON config rather than being hardcoded here.
+        self._fallback_temp_attribute = defaults.get("fallback_temp_attribute")
         
         # Build preset modes list (excluding off mode)
         self._attr_preset_modes = []
@@ -112,8 +116,13 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         
         temp_config = self._temp_settings.get(self._current_mode)
         if not temp_config:
-            # Fallback
-            self._attr_target_temperature = self.get_state_value("heating_temp_nm")
+            # Fallback to the configured attribute, if any
+            if self._fallback_temp_attribute:
+                self._attr_target_temperature = self.get_state_value(
+                    self._fallback_temp_attribute
+                )
+            else:
+                self._attr_target_temperature = None
             return
             
         if "fixed" in temp_config:
@@ -129,10 +138,8 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
         """Update entity attributes based on coordinator data."""
         device = self._device
         if not device:
-            self._attr_available = False
+            # Availability is handled by RinnaiEntity.available
             return
-
-        self._attr_available = device.online
 
         # Get current operation mode
         mode_code = self.get_state_value("operation_mode")
@@ -176,7 +183,7 @@ class RinnaiHeatingClimateEntity(RinnaiEntity, ClimateEntity):
             return
 
         write_cmd = temp_config["write"]
-        hex_temperature = hex(temperature)[2:].upper()
+        hex_temperature = hex(temperature)[2:].upper().zfill(2)
         command = {write_cmd: hex_temperature}
         
         success = await self.coordinator.async_send_command(self._device_id, command)

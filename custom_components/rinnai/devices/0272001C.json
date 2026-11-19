@@ -2,7 +2,7 @@
     "_comment": "RUS-**E75G-CY系列 热水器（高端型）",
     "name": "Rinnai Hot Water Heater E75",
     "features": {
-        "heat_type": "E75_HOT_WATER",
+        "heat_type": "1",
         "energy_data_keys": [
             "gasConsumption"
         ]

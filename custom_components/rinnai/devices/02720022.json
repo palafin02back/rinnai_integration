@@ -2,7 +2,7 @@
     "_comment": "RUS-**E89G-GH系列 热水器（旗舰型）",
     "name": "Rinnai Hot Water Heater E89",
     "features": {
-        "heat_type": "E89_HOT_WATER",
+        "heat_type": "E51_HOT_WATER",
         "energy_data_keys": [
             "gasConsumption"
         ]

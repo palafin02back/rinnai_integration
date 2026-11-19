@@ -23,6 +23,7 @@ def _install_homeassistant_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         "homeassistant",
         "homeassistant.components",
         "homeassistant.components.water_heater",
+        "homeassistant.components.number",
         "homeassistant.components.select",
         "homeassistant.components.switch",
         "homeassistant.components.text",
@@ -83,6 +84,16 @@ def _install_homeassistant_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         def async_write_ha_state(self) -> None:
             self._write_count = getattr(self, "_write_count", 0) + 1
 
+    class NumberEntity:
+        def async_write_ha_state(self) -> None:
+            self._write_count = getattr(self, "_write_count", 0) + 1
+
+    class NumberDeviceClass:
+        TEMPERATURE = "temperature"
+
+    class NumberMode:
+        BOX = "box"
+
     class SensorEntity:
         def async_write_ha_state(self) -> None:
             self._write_count = getattr(self, "_write_count", 0) + 1
@@ -118,6 +129,9 @@ def _install_homeassistant_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     modules["homeassistant.helpers.entity"].Entity = Entity
     modules["homeassistant.components.water_heater"].WaterHeaterEntity = WaterHeaterEntity
     modules["homeassistant.components.water_heater"].WaterHeaterEntityFeature = WaterHeaterEntityFeature
+    modules["homeassistant.components.number"].NumberEntity = NumberEntity
+    modules["homeassistant.components.number"].NumberDeviceClass = NumberDeviceClass
+    modules["homeassistant.components.number"].NumberMode = NumberMode
     modules["homeassistant.components.select"].SelectEntity = SelectEntity
     modules["homeassistant.components.switch"].SwitchEntity = SwitchEntity
     modules["homeassistant.components.text"].TextEntity = TextEntity
@@ -191,6 +205,11 @@ def entity_modules(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         RINNAI_ROOT / "water_heater.py",
         monkeypatch,
     )
+    number = _load_module(
+        "custom_components.rinnai.number",
+        RINNAI_ROOT / "number.py",
+        monkeypatch,
+    )
     select = _load_module(
         "custom_components.rinnai.select",
         RINNAI_ROOT / "select.py",
@@ -214,6 +233,7 @@ def entity_modules(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     return SimpleNamespace(
         water_heater=water_heater,
+        number=number,
         select=select,
         switch=switch,
         text=text,
@@ -228,19 +248,26 @@ class StubCoordinator:
         state_mapping: dict[str, str],
         temperature_steps: list[int] | None = None,
         stale_refreshes: int = 0,
+        schedule_config: dict[str, Any] | None = None,
+        schedule_channels: dict[str, Any] | None = None,
     ) -> None:
         self.commands: list[dict[str, Any]] = []
+        self.optimistic_states: list[dict[str, Any] | None] = []
         self.refresh_count = 0
         self.temperature_steps = temperature_steps
         self.stale_refreshes = stale_refreshes
+        self.client = SimpleNamespace(save_schedule_hour=AsyncMock(return_value=True))
+        self.async_refresh_schedule = AsyncMock()
         self.state = SimpleNamespace(raw_data=raw_data)
         self.device = SimpleNamespace(
             online=True,
+            schedule_lock=asyncio.Lock(),
             device_name="Test Device",
             device_type="02720E32",
             config=SimpleNamespace(
                 state_mapping=state_mapping,
-                schedule_config={},
+                schedule_config=schedule_config or {},
+                schedule_channels=schedule_channels or {},
                 features={},
                 entities={},
             ),
@@ -252,8 +279,9 @@ class StubCoordinator:
     def get_device_state(self, device_id: str) -> Any:
         return self.state
 
-    async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
-        self.commands.append(command)
+    async def async_send_command(self, device_id: str, command: Any) -> bool:
+        self.commands.append(getattr(command, "payload", command))
+        self.optimistic_states.append(getattr(command, "optimistic_state", None))
         return True
 
     async def async_request_refresh(self) -> None:
@@ -544,6 +572,68 @@ async def test_e51_water_heater_uses_dynamic_temperature_bounds(
 
 
 @pytest.mark.asyncio
+async def test_g58_water_heater_preserves_heating_temperature_in_combined_command(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "name": "Hot Water",
+        "key": "main",
+        "min_temp": 35,
+        "max_temp": 60,
+        "step": 1,
+        "command_topic": "tempSetting",
+        "temp_format": "hex4",
+        "combined_temperature_position": "hot_water",
+        "companion_state_attribute": "heating_temp",
+        "state_attribute": "hot_water_temp",
+    }
+    coordinator = StubCoordinator(
+        {"hotWaterTempSetting": 42, "heatTempSetting": 55},
+        {
+            "hot_water_temp": "hotWaterTempSetting",
+            "heating_temp": "heatTempSetting",
+        },
+    )
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
+        coordinator, "dev1", config
+    )
+
+    await entity.async_set_temperature(temperature=45)
+
+    assert coordinator.commands == [{"tempSetting": "2D003700"}]
+
+
+@pytest.mark.asyncio
+async def test_g58_heating_number_preserves_hot_water_temperature_in_combined_command(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "name": "Heating Temperature",
+        "key": "heating_temp_setpoint",
+        "command_key": "tempSetting",
+        "state_attribute": "heating_temp",
+        "companion_state_attribute": "hot_water_temp",
+        "combined_temperature_position": "heating",
+        "min": 40,
+        "max": 80,
+        "step": 1,
+        "temp_format": "hex4",
+    }
+    coordinator = StubCoordinator(
+        {"hotWaterTempSetting": 42, "heatTempSetting": 55},
+        {
+            "hot_water_temp": "hotWaterTempSetting",
+            "heating_temp": "heatTempSetting",
+        },
+    )
+    entity = entity_modules.number.RinnaiNumberEntity(coordinator, "dev1", config)
+
+    await entity.async_set_native_value(60)
+
+    assert coordinator.commands == [{"tempSetting": "2A003C00"}]
+
+
+@pytest.mark.asyncio
 async def test_option_commands_can_send_different_command_keys(
     entity_modules: SimpleNamespace,
 ) -> None:
@@ -652,7 +742,7 @@ def test_e51_operation_mode_maps_observed_values(
 
 
 @pytest.mark.asyncio
-async def test_e51_operation_mode_sends_observed_raw_values(
+async def test_e51_operation_mode_sends_mobile_app_wire_values(
     entity_modules: SimpleNamespace,
 ) -> None:
     config = next(
@@ -668,7 +758,7 @@ async def test_e51_operation_mode_sends_observed_raw_values(
 
     await entity.async_select_option("厨房模式")
 
-    assert coordinator.commands == [{"operationMode": "1"}]
+    assert coordinator.commands == [{"operationMode": "01"}]
 
 
 @pytest.mark.parametrize(
@@ -781,6 +871,73 @@ def test_schedule_text_exposes_notes(entity_modules: SimpleNamespace) -> None:
     assert entity._attr_extra_state_attributes["格式"] == "HH:MM-HH:MM，例如 06:00-23:00。"
 
 
+@pytest.mark.asyncio
+async def test_softener_regeneration_time_text_encodes_command(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "key": "regen_start_time",
+        "name": "Regeneration Start Time",
+        "command_type": "time_hex_pair",
+        "command_key": "regenStartTime",
+        "state_attribute": "regen_start_time",
+    }
+    coordinator = StubCoordinator(
+        {"regenStartTime": "02,1E"},
+        {"regen_start_time": "regenStartTime"},
+    )
+    entity = entity_modules.text.RinnaiGenericText(coordinator, "dev1", config)
+
+    assert entity._attr_native_value == "02:30"
+
+    await entity.async_set_value("23:59")
+
+    assert coordinator.commands == [{"regenStartTime": "17,3B"}]
+    assert entity._attr_native_value == "23:59"
+
+
+@pytest.mark.asyncio
+async def test_schedule_entity_uses_its_configured_channel(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "key": "hot_water_schedule",
+        "name": "热水预约",
+        "command_type": "schedule_data",
+        "schedule_channel": "hot_water",
+        "state_attribute": "hot_water_schedule",
+        "mode_index": 1,
+    }
+    schedule_config = {
+        "total_length": 10,
+        "status_byte_index": 0,
+        "mode_byte_index": 1,
+        "data_start_byte_index": 2,
+        "bytes_per_mode": 3,
+        "mode_count": 1,
+    }
+    coordinator = StubCoordinator(
+        {"hotWaterReservationMode": "0101FFFFFF"},
+        {"hot_water_schedule": "hotWaterReservationMode"},
+        schedule_channels={
+            "hot_water": {"schedule_config": schedule_config}
+        },
+    )
+    entity = entity_modules.text.RinnaiGenericText(coordinator, "dev1", config)
+
+    assert entity.schedule_manager is not None
+    assert entity.schedule_manager.mode_count == 1
+    await entity.async_set_value("00:00-01:00")
+
+    coordinator.client.save_schedule_hour.assert_awaited_once()
+    assert coordinator.client.save_schedule_hour.await_args.kwargs == {
+        "schedule_channel": "hot_water"
+    }
+    coordinator.async_refresh_schedule.assert_awaited_once_with(
+        "dev1", schedule_channel="hot_water"
+    )
+
+
 def test_reservation_sensor_uses_localized_labels_and_notes(
     entity_modules: SimpleNamespace,
 ) -> None:
@@ -802,13 +959,21 @@ def test_reservation_sensor_uses_localized_labels_and_notes(
 
 
 @pytest.mark.parametrize(
-    ("switch_key", "on_value", "off_value", "command_on", "command_off"),
+    (
+        "switch_key",
+        "on_value",
+        "off_value",
+        "command_on",
+        "command_off",
+        "optimistic_on",
+        "optimistic_off",
+    ),
     [
-        ("power", "31", "30", "31", "30"),
-        ("eco_mode", "31", "30", "31", "30"),
-        ("cycle_insulation", "31", "30", "31", "30"),
-        ("cycle_mode", "1", "0", "1", "0"),
-        ("pressurization_mode", "31", "30", "31", "30"),
+        ("power", "31", "30", "01", "01", "31", "30"),
+        ("eco_mode", "31", "30", "01", "01", "31", "30"),
+        ("cycle_insulation", "31", "30", "31", "30", None, None),
+        ("cycle_mode", "1", "0", "01", "00", None, None),
+        ("pressurization_mode", "31", "30", "31", "30", None, None),
     ],
 )
 @pytest.mark.asyncio
@@ -819,6 +984,8 @@ async def test_e51_command_switches_match_observed_values(
     off_value: str,
     command_on: str,
     command_off: str,
+    optimistic_on: str | None,
+    optimistic_off: str | None,
 ) -> None:
     config = next(
         item for item in _e51_config()["entities"]["switch"] if item["key"] == switch_key
@@ -843,6 +1010,117 @@ async def test_e51_command_switches_match_observed_values(
     assert coordinator.commands == [
         {raw_key: command_on},
         {raw_key: command_off},
+    ]
+    assert coordinator.optimistic_states == [
+        {raw_key: optimistic_on} if optimistic_on is not None else None,
+        {raw_key: optimistic_off} if optimistic_off is not None else None,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_command_switch_supports_atomic_multi_field_payloads(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "key": "heating_reservation",
+        "name": "Heating Reservation",
+        "command_key": "heatingReservationSetting",
+        "command_on": "31",
+        "command_off": "30",
+        "command_on_rules": [
+            {
+                "state_attribute": "operation_mode",
+                "not_in_values": ["0", "00", "2", "02"],
+                "command": {"operationMode": "00"},
+            },
+            {
+                "state_attribute": "rapid_heating",
+                "in_values": ["1", "01"],
+                "command": {"rapidHeatingSetting": "00"},
+            },
+        ],
+        "state_attribute": "heating_reservation_setting",
+        "on_value": "31",
+    }
+    coordinator = StubCoordinator(
+        {
+            "cycleReservationSetting": "30",
+            "operationMode": "03",
+            "rapidHeatingSetting": "01",
+        },
+        {
+            "heating_reservation_setting": "cycleReservationSetting",
+            "operation_mode": "operationMode",
+            "rapid_heating": "rapidHeatingSetting",
+        },
+    )
+    entity = entity_modules.switch.RinnaiCommandSwitch(coordinator, "dev1", config)
+
+    assert entity._attr_is_on is False
+    coordinator.state.raw_data["cycleReservationSetting"] = "31"
+    entity._update_attributes()
+    assert entity._attr_is_on is True
+
+    await entity.async_turn_on()
+    await entity.async_turn_off()
+
+    assert coordinator.commands == [
+        {
+            "operationMode": "00",
+            "rapidHeatingSetting": "00",
+            "heatingReservationSetting": "31",
+        },
+        {"heatingReservationSetting": "30"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_command_select_supports_conditional_option_payloads(
+    entity_modules: SimpleNamespace,
+) -> None:
+    config = {
+        "key": "rapid_heating",
+        "name": "Rapid Heating",
+        "command_key": "rapidHeatingSetting",
+        "options_map": {"Off": "00", "Rapid": "01", "Eco rapid": "02"},
+        "option_command_rules": {
+            "Rapid": [
+                {
+                    "state_attribute": "operation_mode",
+                    "not_in_values": ["0", "00", "2", "02"],
+                    "command": {"operationMode": "00"},
+                },
+                {
+                    "state_attribute": "heating_reservation",
+                    "in_values": ["1", "01", "31"],
+                    "command": {"heatingReservationSetting": "30"},
+                },
+            ]
+        },
+        "state_attribute": "rapid_heating",
+    }
+    coordinator = StubCoordinator(
+        {
+            "rapidHeatingSetting": "00",
+            "operationMode": "03",
+            "cycleReservationSetting": "31",
+        },
+        {
+            "rapid_heating": "rapidHeatingSetting",
+            "operation_mode": "operationMode",
+            "heating_reservation": "cycleReservationSetting",
+        },
+    )
+    entity = entity_modules.select.RinnaiCommandSelect(coordinator, "dev1", config)
+
+    await entity.async_select_option("Rapid")
+
+    assert coordinator.commands == [
+        {
+            "operationMode": "00",
+            "heatingReservationSetting": "30",
+            "rapidHeatingSetting": "01",
+        }
     ]
 
 
@@ -999,6 +1277,7 @@ def c66l(entity_modules):
         config["state_mapping"],
     )
     coordinator.device.config.entities = config["entities"]
+    coordinator.device.config.schedule_channels = config["schedule_channels"]
     coordinator.data = {"devices": {"dev1": {}}}
     coordinator.client = SimpleNamespace(
         perform_request=AsyncMock(return_value=True), save_schedule_hour=AsyncMock(return_value=True)
@@ -1010,7 +1289,7 @@ async def c66l_switches(coordinator, entity_modules):
     switches = []
     hass = SimpleNamespace(data={"rinnai": {"entry": coordinator}})
     await entity_modules.switch.async_setup_entry(hass, SimpleNamespace(entry_id="entry"), switches.extend)
-    return {switch._command_key: switch for switch in switches}
+    return {switch._command_key: switch for switch in switches if hasattr(switch, "_command_key")}
 
 
 @pytest.mark.parametrize(("target", "cleared", "prefs"), [
@@ -1063,7 +1342,7 @@ async def test_c66l_active_schedule(c66l, entity_modules, target):
     c66l.client.perform_request.assert_not_awaited()
     c66l.client.save_schedule_hour.return_value = True
     await switches[target].async_turn_on()
-    c66l.client.save_schedule_hour.assert_awaited_with("dev1", "0002ABCD")
+    c66l.client.save_schedule_hour.assert_awaited_with("dev1", "0002ABCD", schedule_channel="heating")
     assert c66l.commands == [{target: "AA"}]
     c66l.client.save_schedule_hour.reset_mock()
     await switches["rapidHeating"].async_turn_on()
@@ -1084,3 +1363,85 @@ async def test_c66l_concurrent_transitions_use_latest_state(c66l, entity_modules
     c66l.async_send_command = publish
     await asyncio.gather(switches["ecoMode"].async_turn_on(), switches["outdoorMode"].async_turn_on())
     assert c66l.commands == [{"ecoMode": "AA"}, {"ecoMode": "55", "outdoorMode": "AA"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("circuit", "eco", "maximum"), [
+    ("AA", "55", 60), ("AA", "AA", 50), ("55", "55", 85), ("55", "AA", 70),
+    (None, "55", None), ("AA", None, None),
+])
+async def test_c66l_heating_setpoints(c66l, entity_modules, circuit, eco, maximum):
+    c66l.state.raw_data.update(heatingOutWaterTempControl=circuit, ecoMode=eco)
+    entity = entity_modules.number.RinnaiNumberEntity(
+        c66l, "dev1", c66l.device.config.entities["number"][0]
+    )
+    assert entity.available == (maximum is not None)
+    if maximum is not None:
+        assert entity._attr_native_max_value == maximum
+        await entity.async_set_native_value(maximum)
+        assert c66l.commands.pop() == {"heatingTempSetting": f"{maximum:02X}"}
+    with pytest.raises(ValueError):
+        await entity.async_set_native_value(61 if maximum is not None else 40)
+    assert c66l.commands == []
+
+
+@pytest.mark.asyncio
+async def test_c66l_hot_water_timer_edits_preserve_status_and_slots(c66l, entity_modules):
+    preset = "DB446CDB006E4818C6"
+    c66l.state.raw_data.update(hotWaterReservationMode="0004" + "00" * 9 + "123456ABCDEF")
+    configs = c66l.device.config.entities
+    select = entity_modules.select.RinnaiGenericSelect(c66l, "dev1", configs["select"][1])
+    assert select.options == ["Mode 4", "Mode 5"]
+    assert select._attr_current_option == "Mode 4"
+    await select.async_select_option("Mode 5")
+    c66l.client.save_schedule_hour.assert_awaited_once_with(
+        "dev1", "0005" + preset + "123456ABCDEF", schedule_channel="hot_water"
+    )
+    text = entity_modules.text.RinnaiGenericText(c66l, "dev1", configs["text"][-1])
+    await text.async_set_value("0-1")
+    c66l.client.save_schedule_hour.assert_awaited_with(
+        "dev1", "0004" + preset + "123456010000", schedule_channel="hot_water"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("channel", ["heating", "hot_water"])
+async def test_c66l_reservation_switch_interlock(c66l, entity_modules, channel):
+    raw = "0005" + "123456" * 5
+    c66l.state.raw_data.update(
+        heatingReservationMode=raw, hotWaterReservationMode=raw,
+        ecoMode="AA", outdoorMode="AA", rapidHeating="AA",
+    )
+    switches = []
+    hass = SimpleNamespace(data={"rinnai": {"entry": c66l}})
+    await entity_modules.switch.async_setup_entry(hass, SimpleNamespace(entry_id="entry"), switches.extend)
+    switch = next(s for s in switches if s.schedule_channel == channel)
+    await switch.async_turn_on()
+    c66l.client.save_schedule_hour.assert_awaited_once_with(
+        "dev1", "01" + raw[2:], schedule_channel=channel
+    )
+    if channel == "heating":
+        assert c66l.commands == [{"ecoMode": "55", "outdoorMode": "55"}]
+        c66l.client.perform_request.assert_awaited_once()
+    else:
+        assert c66l.commands == []
+        c66l.client.perform_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("flame", "current", "target", "allowed"), [
+    ("55", 40, 52, False), ("55", 40, 55, True), ("AA", 46, 47, True),
+    ("AA", 46, 55, False), ("AA", 60, 55, True),
+])
+async def test_c66l_hot_water_setpoints(c66l, entity_modules, flame, current, target, allowed):
+    c66l.state.raw_data.update(hotWaterTempSetting=current, burningState=flame)
+    entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
+        c66l, "dev1", c66l.device.config.entities["water_heater"][0]
+    )
+    if allowed:
+        await entity.async_set_temperature(temperature=target)
+        assert c66l.commands == [{"hotWaterTempSetting": f"{target:02X}"}]
+    else:
+        with pytest.raises(ValueError):
+            await entity.async_set_temperature(temperature=target)
+        assert c66l.commands == []

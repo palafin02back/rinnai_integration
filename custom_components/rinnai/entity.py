@@ -74,9 +74,21 @@ class RinnaiEntity(CoordinatorEntity, Entity):
         """Get schedule manager instance (lazy loading)."""
         if self._schedule_manager is None:
             device = self._device
-            if device and device.config and hasattr(device.config, "schedule_config"):
-                self._schedule_manager = RinnaiScheduleManager(device.config.schedule_config)
+            if device and device.config:
+                schedule_config = device.config.schedule_config
+                if schedule_channel := self._entity_config.get("schedule_channel"):
+                    channel = device.config.schedule_channels.get(schedule_channel, {})
+                    schedule_config = channel.get("schedule_config", {})
+                    if not schedule_config:
+                        return None
+                if schedule_config or not schedule_channel:
+                    self._schedule_manager = RinnaiScheduleManager(schedule_config)
         return self._schedule_manager
+
+    @property
+    def schedule_channel(self) -> str | None:
+        """Return the schedule channel selected by this entity."""
+        return self._entity_config.get("schedule_channel")
 
     def get_state_value(self, key: str) -> Any:
         """Get a value from the device state using the configured mapping."""
