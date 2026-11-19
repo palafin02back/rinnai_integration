@@ -198,6 +198,12 @@ API_DEFINITIONS: Final = {
         "data": {"name": "{name}", "deviceId": "{device_id}", "roomType": "{room_type}"}
     },
 
+    "update_flow_parameter": {
+        "url": "/V1/device/updateFlowParameter",
+        "method": "POST",
+        "json": {"mac": "{mac}"},
+    },
+
     # --- Schedule ---
     "get_schedule": {
         "url": "/V1/device/schedule/getScheduleInfo",

@@ -1,13 +1,15 @@
 {
   "name": "Rinnai Boiler C66L",
   "features": {
-    "heat_type": "C66L_HEAT_OVEN",
+    "heat_type": "C66_HEAT_OVEN",
     "energy_data_keys": [
       "airConsumption"
     ]
   },
   "supported_requests": [
-    "air_consumption"
+    "air_consumption",
+    "save_schedule",
+    "update_flow_parameter"
   ],
   "processors": {
     "heatingTempSetting": [
@@ -143,7 +145,7 @@
       {
         "key": "eco_mode",
         "name": "节能模式",
-        "type": "command_switch",
+        "type": "c66l_heating_mode",
         "command_key": "ecoMode",
         "command_on": "AA",
         "command_off": "55",
@@ -153,22 +155,22 @@
       {
         "key": "outdoor_mode",
         "name": "户外模式",
-        "type": "command_switch",
+        "type": "c66l_heating_mode",
         "command_key": "outdoorMode",
-        "command_on": "55",
-        "command_off": "AA",
+        "command_on": "AA",
+        "command_off": "55",
         "state_attribute": "outdoor_mode",
-        "on_value": "55"
+        "on_value": "AA"
       },
       {
         "key": "rapid_heating",
         "name": "快速加热",
-        "type": "command_switch",
+        "type": "c66l_heating_mode",
         "command_key": "rapidHeating",
-        "command_on": "55",
-        "command_off": "AA",
+        "command_on": "AA",
+        "command_off": "55",
         "state_attribute": "rapid_heating",
-        "on_value": "55"
+        "on_value": "AA"
       },
       {
         "key": "cycle_insulation",

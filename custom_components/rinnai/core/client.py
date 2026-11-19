@@ -258,7 +258,10 @@ class RinnaiClient:
             _LOGGER.error("Error setting parameter: %s", err)
             return False
 
-    async def perform_request(self, device_id: str, request_name: str, **kwargs) -> dict[str, Any] | bool | None:
+    async def perform_request(
+        self, device_id: str, request_name: str, *, json_fields: dict[str, str] | None = None,
+        success_only: bool = False, **kwargs,
+    ) -> dict[str, Any] | bool | None:
         """
         Perform a configurable request.
         
@@ -338,6 +341,9 @@ class RinnaiClient:
                 
                 if method == "GET":
                     response = await self._session.get(url, params=final_params, headers=headers)
+                elif method == "POST" and "json" in request_config:
+                    payload = {**(json_fields or {}), **substitute(request_config["json"])}
+                    response = await self._session.post(url, json=payload, headers=headers)
                 elif method == "POST":
                     response = await self._session.post(url, data=final_data, headers=headers)
                 else:
@@ -357,7 +363,7 @@ class RinnaiClient:
                     )
                     return False
 
-                return resp_json.get("data", True)
+                return True if success_only else resp_json.get("data", True)
 
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error performing request %s: %s", request_name, err)
@@ -369,7 +375,7 @@ class RinnaiClient:
 
     async def save_schedule_hour(self, device_id: str, schedule_data: str) -> bool:
         """Save schedule info using configurable request."""
-        result = await self.perform_request(device_id, "save_schedule", data=schedule_data)
+        result = await self.perform_request(device_id, "save_schedule", data=schedule_data, success_only=True)
         return bool(result)
 
     @callback

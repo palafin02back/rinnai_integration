@@ -1,12 +1,14 @@
 """Tests for config-driven entity command behavior."""
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -28,6 +30,7 @@ def _install_homeassistant_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         "homeassistant.config_entries",
         "homeassistant.const",
         "homeassistant.core",
+        "homeassistant.exceptions",
         "homeassistant.helpers",
         "homeassistant.helpers.entity",
         "homeassistant.helpers.entity_platform",
@@ -127,6 +130,7 @@ def _install_homeassistant_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     modules["homeassistant.const"].EntityCategory = str
     modules["homeassistant.const"].UnitOfTemperature = SimpleNamespace(CELSIUS="C")
     modules["homeassistant.const"].UnitOfTime = SimpleNamespace(HOURS="h")
+    modules["homeassistant.exceptions"].HomeAssistantError = RuntimeError
     modules["homeassistant.core"].HomeAssistant = object
     modules["homeassistant.core"].callback = lambda func: func
     modules["homeassistant.helpers.entity_platform"].AddEntitiesCallback = object
@@ -985,3 +989,98 @@ def test_sensor_fallback_uses_error_code_when_fault_code_is_empty(
     entity._update_attributes()
 
     assert entity._attr_native_value == "12"
+
+
+@pytest.fixture()
+def c66l(entity_modules):
+    config = json.loads((RINNAI_ROOT / "devices/0F060002.json").read_text())
+    coordinator = StubCoordinator(
+        dict(power="01", summerWinter="AA", ecoMode="55", outdoorMode="55", rapidHeating="55"),
+        config["state_mapping"],
+    )
+    coordinator.device.config.entities = config["entities"]
+    coordinator.data = {"devices": {"dev1": {}}}
+    coordinator.client = SimpleNamespace(
+        perform_request=AsyncMock(return_value=True), save_schedule_hour=AsyncMock(return_value=True)
+    )
+    return coordinator
+
+
+async def c66l_switches(coordinator, entity_modules):
+    switches = []
+    hass = SimpleNamespace(data={"rinnai": {"entry": coordinator}})
+    await entity_modules.switch.async_setup_entry(hass, SimpleNamespace(entry_id="entry"), switches.extend)
+    return {switch._command_key: switch for switch in switches}
+
+
+@pytest.mark.parametrize(("target", "cleared", "prefs"), [
+    ("outdoorMode", ["ecoMode", "rapidHeating"], {"outDoorModeC66L": "AA", "ecoModeC66L": "55"}),
+    ("rapidHeating", ["outdoorMode"], {"outDoorModeC66L": "55"}),
+    ("ecoMode", ["outdoorMode"], {"ecoModeC66L": "AA", "outDoorModeC66L": "55"}),
+])
+@pytest.mark.asyncio
+async def test_c66l_mode_transitions(c66l, entity_modules, target, cleared, prefs):
+    switches = await c66l_switches(c66l, entity_modules)
+    modes = ("outdoorMode", "ecoMode", "rapidHeating")
+    assert all(switches[key].available and switches[key]._attr_is_on is False for key in modes)
+    for key in modes:
+        if key != target:
+            c66l.state.raw_data[key] = "AA"
+            switches[key]._handle_coordinator_update()
+            assert switches[key]._attr_is_on
+    await switches[target].async_turn_on()
+    assert list(c66l.commands[-1].items()) == [(key, "55") for key in cleared] + [(target, "AA")]
+    c66l.client.perform_request.assert_awaited_once_with(
+        "dev1", "update_flow_parameter", json_fields=prefs, success_only=True
+    )
+    await switches[target].async_turn_off()
+    assert c66l.commands[-1] == {target: "55"}
+
+
+@pytest.mark.parametrize(("power", "season"), [("00", "AA"), ("01", "55"), (None, "AA")])
+@pytest.mark.asyncio
+async def test_c66l_unavailable_modes_block_writes(c66l, entity_modules, power, season):
+    c66l.state.raw_data.update(power=power, summerWinter=season)
+    switches = await c66l_switches(c66l, entity_modules)
+    for key in ("outdoorMode", "ecoMode", "rapidHeating"):
+        assert not switches[key].available
+        for action in (switches[key].async_turn_on, switches[key].async_turn_off):
+            with pytest.raises(RuntimeError, match="winter mode"):
+                await action()
+    assert not c66l.commands
+    c66l.client.perform_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize("target", ["outdoorMode", "ecoMode"])
+@pytest.mark.asyncio
+async def test_c66l_active_schedule(c66l, entity_modules, target):
+    switches = await c66l_switches(c66l, entity_modules)
+    c66l.state.raw_data["heatingReservationMode"] = "0102ABCD"
+    c66l.client.save_schedule_hour.return_value = False
+    with pytest.raises(RuntimeError, match="reservation"):
+        await switches[target].async_turn_on()
+    assert c66l.commands == []
+    c66l.client.perform_request.assert_not_awaited()
+    c66l.client.save_schedule_hour.return_value = True
+    await switches[target].async_turn_on()
+    c66l.client.save_schedule_hour.assert_awaited_with("dev1", "0002ABCD")
+    assert c66l.commands == [{target: "AA"}]
+    c66l.client.save_schedule_hour.reset_mock()
+    await switches["rapidHeating"].async_turn_on()
+    await switches[target].async_turn_off()
+    c66l.client.save_schedule_hour.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_c66l_concurrent_transitions_use_latest_state(c66l, entity_modules):
+    switches = await c66l_switches(c66l, entity_modules)
+
+    async def publish(device_id, command):
+        await asyncio.sleep(0)
+        c66l.state.raw_data.update(command)
+        c66l.commands.append(command)
+        return True
+
+    c66l.async_send_command = publish
+    await asyncio.gather(switches["ecoMode"].async_turn_on(), switches["outdoorMode"].async_turn_on())
+    assert c66l.commands == [{"ecoMode": "AA"}, {"ecoMode": "55", "outdoorMode": "AA"}]

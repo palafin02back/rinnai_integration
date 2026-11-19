@@ -99,3 +99,31 @@ def test_authenticated_headers_include_user_agent(client_module):
         "User-Agent": client_module.API_HEADERS["User-Agent"],
         "Authorization": "Basic token",
     }
+
+
+@pytest.mark.asyncio
+async def test_c66l_schedule_and_cloud_preference_wire_format(client_module):
+    import json
+    from types import SimpleNamespace
+
+    config = json.loads((Path(client_module.__file__).parents[1] / "devices/0F060002.json").read_text())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client._token = "token"
+    client.devices["dev"] = {"mac": "unit"}
+    client._device_configs["dev"] = SimpleNamespace(
+        supported_requests=config["supported_requests"], features=config["features"]
+    )
+    response = MagicMock()
+    response.json = AsyncMock(return_value={"success": True, "data": None})
+    client._session.post = AsyncMock(return_value=response)
+    assert await client.save_schedule_hour("dev", "0002ABCD")
+    args = client._session.post.await_args
+    assert args.args[0].endswith("/V1/device/schedule/saveScheduleHour")
+    assert args.kwargs["data"] == {"mac": "unit", "type": "C66_HEAT_OVEN", "byteStr": "0002ABCD"}
+    assert await client.perform_request(
+        "dev", "update_flow_parameter", json_fields={"ecoModeC66L": "55"}, success_only=True
+    )
+    args = client._session.post.await_args
+    assert args.args[0].endswith("/V1/device/updateFlowParameter")
+    assert args.kwargs["json"] == {"mac": "unit", "ecoModeC66L": "55"}
+    assert "data" not in args.kwargs

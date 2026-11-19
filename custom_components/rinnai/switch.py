@@ -1,17 +1,19 @@
 """Support for Rinnai switches."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
-from .core.entity_utils import mask_hex_state
+from .core.entity_utils import get_hex_byte, mask_hex_state
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,10 +33,13 @@ async def async_setup_entry(
             continue
 
         if switch_configs := device.config.entities.get("switch"):
+            mode_lock = asyncio.Lock()
             for config in switch_configs:
                 switch_type = config.get("type", "generic")
                 if switch_type == "reservation_switch":
                     entities.append(RinnaiHeatingReservationSwitch(coordinator, device_id, config))
+                elif switch_type == "c66l_heating_mode":
+                    entities.append(RinnaiC66LModeSwitch(coordinator, device_id, config, mode_lock))
                 elif switch_type == "command_switch":
                     entities.append(RinnaiCommandSwitch(coordinator, device_id, config))
 
@@ -171,3 +176,81 @@ class RinnaiCommandSwitch(RinnaiEntity, SwitchEntity):
         ):
             self._attr_is_on = False
             self.async_write_ha_state()
+
+
+class RinnaiC66LModeSwitch(RinnaiCommandSwitch):
+    """C66L heating modes share a command lock and can switch peers off in one ENL."""
+
+    # Only clear the peers explicitly cleared by C66LControlActivity.
+    _clear_on_enable = {
+        "outdoorMode": ("ecoMode", "rapidHeating"),
+        "rapidHeating": ("outdoorMode",),
+        "ecoMode": ("outdoorMode",),
+    }
+
+    def __init__(
+        self, coordinator: RinnaiCoordinator, device_id: str, config: dict[str, Any],
+        mode_lock: asyncio.Lock,
+    ) -> None:
+        super().__init__(coordinator, device_id, config)
+        self._mode_lock = mode_lock
+
+    @property
+    def available(self) -> bool:
+        return (
+            super().available
+            and self.get_state_value("power") == "01"
+            and self._normalize_state_value(self.get_state_value("summer_winter")) == "AA"
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_mode(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_mode(False)
+
+    async def _set_mode(self, enable: bool) -> None:
+        async with self._mode_lock:
+            if not self.available:
+                raise HomeAssistantError("C66L heating modes require an online boiler in winter mode")
+
+            key = self._command_key
+            if enable and key in ("ecoMode", "outdoorMode"):
+                await self._disable_active_schedule()
+                if not self.available:
+                    raise HomeAssistantError("C66L heating became unavailable")
+
+            command = {}
+            if enable:
+                for peer in self._clear_on_enable[key]:
+                    if self._normalize_state_value(self.get_state_value(peer)) == "AA":
+                        command[peer] = "55"
+            command[key] = self._command_on if enable else self._command_off
+            if not await self.coordinator.async_send_command(self._device_id, command):
+                raise HomeAssistantError("Could not send the C66L heating mode command")
+
+            preferences = self._flow_preferences(enable)
+            if preferences:
+                result = await self.coordinator.client.perform_request(
+                    self._device_id, "update_flow_parameter", json_fields=preferences, success_only=True
+                )
+                if not result:
+                    _LOGGER.warning("C66L mode command sent but cloud preference update failed")
+
+    async def _disable_active_schedule(self) -> None:
+        schedule = self.get_state_value("heating_reservation_mode")
+        if not isinstance(schedule, str) or not schedule.startswith("01"):
+            return
+        if get_hex_byte(schedule, 0) is None:
+            raise HomeAssistantError("Invalid C66L heating reservation data")
+        if not await self.coordinator.client.save_schedule_hour(self._device_id, "00" + schedule[2:]):
+            raise HomeAssistantError("Could not disable the C66L heating reservation")
+
+    def _flow_preferences(self, enable: bool) -> dict[str, str]:
+        """The app stores outdoor and eco selections under separate HTTP keys."""
+        if self._command_key == "rapidHeating":
+            return {"outDoorModeC66L": "55"} if enable else {}
+        selected, other = "outDoorModeC66L", "ecoModeC66L"
+        if self._command_key == "ecoMode":
+            selected, other = other, selected
+        return {selected: "AA", other: "55"} if enable else {selected: "55"}
