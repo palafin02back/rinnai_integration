@@ -224,6 +224,27 @@ class TestScheduleManagerUpdateScheduleData:
         """Test updating invalid hex returns None."""
         assert schedule_manager.update_schedule_data("01", 1, "00:00-06:00") is None
 
+    def test_update_schedule_data_unparseable_string_returns_none(
+        self, schedule_manager, valid_hex
+    ):
+        """Garbage input must not wipe the schedule — save is refused."""
+        assert schedule_manager.update_schedule_data(valid_hex, 1, "garbage") is None
+
+    @pytest.mark.parametrize("schedule", ["8-6", "24-25", ","])
+    def test_update_schedule_data_invalid_range_returns_none(
+        self, schedule_manager, valid_hex, schedule
+    ):
+        """Invalid ranges must not replace an existing schedule with off."""
+        assert schedule_manager.update_schedule_data(valid_hex, 1, schedule) is None
+
+    def test_update_schedule_data_slash_separator(self, schedule_manager, valid_hex):
+        """The documented "/" separator is accepted."""
+        result = schedule_manager.update_schedule_data(
+            valid_hex, 1, "06:00-08:00/18:00-21:00"
+        )
+        assert result is not None
+        assert schedule_manager.parse_schedule(result, 1) == "06:00-08:00, 18:00-21:00"
+
 
 class TestScheduleManagerRoundTrip:
     """Integration tests for parse/update cycle."""

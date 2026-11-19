@@ -24,6 +24,7 @@ from ..const import (
     REFESH_TIME,
 )
 from .config_manager import config_manager
+from .command import build_mqtt_command_message
 from .entity_utils import (
     is_dynamic_mqtt_code_enabled,
     normalize_dynamic_mqtt_code,
@@ -83,6 +84,60 @@ class RinnaiClient:
         if authenticated:
             headers["Authorization"] = f"Basic {self._token}"
         return headers
+
+    def _invalidate_token(self, expected_token: str | None = None) -> bool:
+        """Drop the cached token so the next login() re-authenticates.
+
+        The API does not distinguish auth failures from other errors, and a
+        server-side-invalidated token would otherwise be reused for up to
+        REFESH_TIME (24 h). ``expected_token`` prevents one failing concurrent
+        request from clearing a token that another request already refreshed.
+        """
+        if expected_token is not None and self._token != expected_token:
+            return False
+        self._token = None
+        return True
+
+    async def _authenticated_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Perform an authenticated request and refresh a rejected token once."""
+        for attempt in range(2):
+            if not self._token and not await self.login():
+                return None
+
+            request_token = self._token
+            headers = self._http_headers(authenticated=True)
+            async with asyncio.timeout(self.connect_timeout):
+                if method == "GET":
+                    response = await self._session.get(
+                        url, params=params, headers=headers
+                    )
+                elif method == "POST":
+                    body = {"json": json_body} if json_body is not None else {"data": data}
+                    response = await self._session.post(url, headers=headers, **body)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                resp_json = await response.json()
+
+            if resp_json.get("success") is True:
+                return resp_json
+
+            self._invalidate_token(request_token)
+            if attempt == 0:
+                _LOGGER.warning(
+                    "Authenticated Rinnai request was rejected; "
+                    "refreshing the token and retrying once"
+                )
+
+        return resp_json
 
     def register_callback(
         self, device_id: str, callback_func: Callable[[dict[str, Any]], None]
@@ -180,82 +235,72 @@ class RinnaiClient:
 
     async def fetch_devices(self) -> bool:
         """Fetch devices from the Rinnai API."""
-        if not self._token and not await self.login():
-            return False
-
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
-                response = await self._session.get(url, headers=headers)
-                resp_json = await response.json()
+            url = f"{BASE_URL}{API_DEFINITIONS['device_list']['url']}"
+            resp_json = await self._authenticated_request("GET", url)
+            if resp_json is None:
+                return False
 
-                if resp_json.get("success") is not True:
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Failed to get devices: %s",
+                    resp_json.get("msg", "Unknown error"),
+                )
+                return False
+
+            devices_list = resp_json.get("data", {}).get("list", [])
+            if not devices_list:
+                _LOGGER.warning("No devices found")
+                return False
+
+            for device in devices_list:
+                device_id = device.get("id")
+                if not device_id:
+                    continue
+
+                self.devices[device_id] = device
+                if device_id not in self.device_states:
+                    self.device_states[device_id] = {}
+
+                device_type = device.get("deviceType")
+                device_config = config_manager.get_config(device_type)
+                self._device_configs[device_id] = device_config
+                if device_config is None:
                     _LOGGER.error(
-                        "Failed to get devices: %s",
-                        resp_json.get("msg", "Unknown error"),
+                        "Device %s (name=%s) has unsupported deviceType '%s' — "
+                        "no entities will be created. To add support, create "
+                        "custom_components/rinnai/devices/%s.json",
+                        device_id, device.get("name"), device_type, device_type,
                     )
-                    return False
 
-                devices_list = resp_json.get("data", {}).get("list", [])
-                if not devices_list:
-                    _LOGGER.warning("No devices found")
-                    return False
-
-                for device in devices_list:
-                    device_id = device.get("id")
-                    if not device_id:
-                        continue
-
-                    self.devices[device_id] = device
-                    if device_id not in self.device_states:
-                        self.device_states[device_id] = {}
-                    
-                    device_type = device.get("deviceType")
-                    device_config = config_manager.get_config(device_type)
-                    self._device_configs[device_id] = device_config
-                    if device_config is None:
-                        _LOGGER.error(
-                            "Device %s (name=%s) has unsupported deviceType '%s' — "
-                            "no entities will be created. To add support, create "
-                            "custom_components/rinnai/devices/%s.json",
-                            device_id, device.get("name"), device_type, device_type,
-                        )
-
-                return True
+            return True
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error getting devices from Rinnai API: %s", err)
             return False
 
     async def fetch_device_state(self, device_id: str) -> bool:
         """Fetch the state of a device via HTTP API."""
-        if not self._token and not await self.login():
-            return False
-
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
-                response = await self._session.get(
-                    url,
-                    params={"deviceId": device_id},
-                    headers=headers,
+            url = f"{BASE_URL}{API_DEFINITIONS['device_state']['url']}"
+            resp_json = await self._authenticated_request(
+                "GET", url, params={"deviceId": device_id}
+            )
+            if resp_json is None:
+                return False
+
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Failed to get device %s: %s",
+                    device_id,
+                    resp_json.get("msg", "Unknown error"),
                 )
-                resp_json = await response.json()
+                return False
 
-                if resp_json.get("success") is not True:
-                    _LOGGER.error(
-                        "Failed to get device %s: %s",
-                        device_id,
-                        resp_json.get("msg", "Unknown error"),
-                    )
-                    return False
-
-                self.device_states[device_id] = resp_json.get("data", {})
-                return True
+            self.device_states[device_id] = resp_json.get("data", {})
+            return True
 
         except (TimeoutError, aiohttp.ClientError) as err:
-            _LOGGER.error("Error setting parameter: %s", err)
+            _LOGGER.error("Error fetching state for device %s: %s", device_id, err)
             return False
 
     async def perform_request(
@@ -270,9 +315,6 @@ class RinnaiClient:
             request_name: The name of the request in config (e.g., 'get_schedule').
             **kwargs: Parameters to substitute in the request template.
         """
-        if not self._token and not await self.login():
-            return None
-
         device = self.devices.get(device_id)
         if not device:
             _LOGGER.error("Device %s not found", device_id)
@@ -336,46 +378,121 @@ class RinnaiClient:
         final_data = substitute(data)
 
         try:
-            async with asyncio.timeout(self.connect_timeout):
-                headers = self._http_headers(authenticated=True)
-                
-                if method == "GET":
-                    response = await self._session.get(url, params=final_params, headers=headers)
-                elif method == "POST" and "json" in request_config:
-                    payload = {**(json_fields or {}), **substitute(request_config["json"])}
-                    response = await self._session.post(url, json=payload, headers=headers)
-                elif method == "POST":
-                    response = await self._session.post(url, data=final_data, headers=headers)
-                else:
-                    _LOGGER.error("Unsupported method %s", method)
-                    return None
+            if method not in ("GET", "POST"):
+                _LOGGER.error("Unsupported method %s", method)
+                return None
 
-                resp_json = await response.json()
-                
-                if resp_json.get("success") is not True:
-                    _LOGGER.error(
-                        "Request %s failed. URL: %s, Params: %s, Data: %s, Response: %s",
-                        request_name,
-                        url,
-                        final_params,
-                        final_data,
-                        resp_json
-                    )
-                    return False
+            json_body = None
+            if "json" in request_config:
+                json_body = {**(json_fields or {}), **substitute(request_config["json"])}
+            resp_json = await self._authenticated_request(
+                method,
+                url,
+                params=final_params if method == "GET" else None,
+                data=final_data if method == "POST" else None,
+                json_body=json_body,
+            )
+            if resp_json is None:
+                return None
 
-                return True if success_only else resp_json.get("data", True)
+            if resp_json.get("success") is not True:
+                _LOGGER.error(
+                    "Request %s failed. URL: %s, Params: %s, Data: %s, Response: %s",
+                    request_name,
+                    url,
+                    final_params,
+                    final_data,
+                    resp_json,
+                )
+                return False
+
+            return True if success_only else resp_json.get("data", True)
 
         except (TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Error performing request %s: %s", request_name, err)
             return None
 
-    async def get_schedule_info(self, device_id: str) -> dict[str, Any] | None:
-        """Get schedule info using configurable request."""
-        return await self.perform_request(device_id, "get_schedule")
+    async def get_schedule_info(
+        self,
+        device_id: str,
+        schedule_channel: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Get one or all configured schedule channels."""
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if not channels:
+            return await self.perform_request(device_id, "get_schedule")
 
-    async def save_schedule_hour(self, device_id: str, schedule_data: str) -> bool:
-        """Save schedule info using configurable request."""
-        result = await self.perform_request(device_id, "save_schedule", data=schedule_data, success_only=True)
+        if schedule_channel is not None:
+            channel = channels.get(schedule_channel)
+            if channel is None:
+                _LOGGER.error(
+                    "Unknown schedule channel %s for device %s",
+                    schedule_channel,
+                    device_id,
+                )
+                return None
+            response = await self.perform_request(
+                device_id,
+                "get_schedule",
+                heat_type=channel.get("get_type", config.features.get("heat_type")),
+            )
+            return self._map_schedule_response(response, {schedule_channel: channel})
+
+        merged: dict[str, Any] = {}
+        channels_by_type: dict[str, dict[str, dict[str, Any]]] = {}
+        for name, channel in channels.items():
+            get_type = str(channel.get("get_type", config.features.get("heat_type")))
+            channels_by_type.setdefault(get_type, {})[name] = channel
+
+        for get_type, grouped_channels in channels_by_type.items():
+            response = await self.perform_request(
+                device_id, "get_schedule", heat_type=get_type
+            )
+            mapped = self._map_schedule_response(response, grouped_channels)
+            if mapped:
+                merged.update(mapped)
+        return merged or None
+
+    @staticmethod
+    def _map_schedule_response(
+        response: Any,
+        channels: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Map API schedule fields onto raw state keys declared by channels."""
+        if not isinstance(response, dict):
+            return None
+        mapped: dict[str, Any] = {}
+        for channel in channels.values():
+            response_key = channel.get("response_key", "byteStr")
+            state_key = channel.get("state_key", response_key)
+            if response_key in response:
+                mapped[state_key] = response[response_key]
+        return mapped or response
+
+    async def save_schedule_hour(
+        self,
+        device_id: str,
+        schedule_data: str,
+        schedule_channel: str | None = None,
+    ) -> bool:
+        """Save schedule info using the configured channel request type."""
+        kwargs: dict[str, Any] = {"data": schedule_data}
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if schedule_channel is not None:
+            channel = channels.get(schedule_channel)
+            if channel is None:
+                _LOGGER.error(
+                    "Unknown schedule channel %s for device %s",
+                    schedule_channel,
+                    device_id,
+                )
+                return False
+            kwargs["heat_type"] = channel.get(
+                "save_type", config.features.get("heat_type")
+            )
+        result = await self.perform_request(device_id, "save_schedule", success_only=True, **kwargs)
         return bool(result)
 
     @callback
@@ -386,12 +503,22 @@ class RinnaiClient:
 
         self.device_states[device_id].update(state_data)
         
-        # Sync reservation mode fields to byteStr (G56/G55/G58 use heatingReservationMode,
-        # E-series water heaters use hotWaterReservationMode)
-        for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
-            if reservation_key in state_data:
-                self.device_states[device_id]["byteStr"] = state_data[reservation_key]
-                break
+        config = self._device_configs.get(device_id)
+        channels = getattr(config, "schedule_channels", {}) if config else {}
+        if channels:
+            for channel in channels.values():
+                if channel.get("state_key") != "byteStr":
+                    continue
+                reservation_key = channel.get("mqtt_state_key", "byteStr")
+                if reservation_key in state_data:
+                    self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                    break
+        else:
+            # Legacy single-channel configs expose their reservation as byteStr.
+            for reservation_key in ("heatingReservationMode", "hotWaterReservationMode"):
+                if reservation_key in state_data:
+                    self.device_states[device_id]["byteStr"] = state_data[reservation_key]
+                    break
 
         # Notify callbacks
         if device_id in self._state_callbacks:
@@ -402,10 +529,18 @@ class RinnaiClient:
                     _LOGGER.error("Error in state callback for device %s: %s", device_id, err)
 
     async def _setup_mqtt_for_device(self, device_id: str) -> None:
-        """Set up MQTT subscriptions for a device."""
+        """Set up MQTT subscriptions for a device.
+
+        Subscriptions are registered even when the broker is unreachable —
+        the MQTT client activates them once its background reconnect succeeds.
+        """
         if not self._mqtt_client.connected:
             if not await self._mqtt_client.async_connect():
-                return
+                _LOGGER.warning(
+                    "MQTT broker unreachable; subscriptions for device %s "
+                    "will activate after reconnect",
+                    device_id,
+                )
 
         device_mac = self.devices.get(device_id, {}).get("mac")
         if not device_mac:
@@ -533,13 +668,11 @@ class RinnaiClient:
         device_classid = device_data.get("classID")
         set_topic = MQTT_DEFINITIONS["topics"]["set"].format(mac=device_mac)
         
-        rinnai_message = {
-            "code": auth_code,
-            "enl": [{"data": str(value), "id": key} for key, value in command.items()],
-            "id": device_classid,
-            "ptn": proto["command_pattern"],
-            "sum": proto["command_sum"],
-        }
+        rinnai_message = build_mqtt_command_message(
+            {"authCode": auth_code, "classID": device_classid},
+            command,
+            proto,
+        )
 
         try:
             return await self._mqtt_client.async_publish(

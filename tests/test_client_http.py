@@ -4,8 +4,9 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from types import ModuleType
-from unittest.mock import AsyncMock, MagicMock
+import time
+from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -127,3 +128,168 @@ async def test_c66l_schedule_and_cloud_preference_wire_format(client_module):
     assert args.args[0].endswith("/V1/device/updateFlowParameter")
     assert args.kwargs["json"] == {"mac": "unit", "ecoModeC66L": "55"}
     assert "data" not in args.kwargs
+
+def test_stale_request_cannot_clear_newer_token(client_module):
+    """Concurrent stale responses must preserve an already refreshed token."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client._token = "fresh-token"
+
+    assert client._invalidate_token("stale-token") is False
+    assert client._token == "fresh-token"
+
+
+def _response(payload):
+    response = MagicMock()
+    response.json = AsyncMock(return_value=payload)
+    return response
+
+
+def _configured_client(client_module, session):
+    client_module.async_get_clientsession = MagicMock(return_value=session)
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule"],
+        features={"heat_type": "1"},
+    )
+    client._token = "stale-token"
+    client._last_login_time = time.time()
+    return client
+
+
+@pytest.mark.asyncio
+async def test_perform_request_refreshes_rejected_token_and_retries(client_module):
+    """A generic API request retries once with a newly issued token."""
+    session = MagicMock()
+    session.get = AsyncMock(
+        side_effect=[
+            _response({"success": False, "msg": "token expired"}),
+            _response({"success": True, "data": {"token": "fresh-token"}}),
+            _response({"success": True, "data": {"schedule": "value"}}),
+        ]
+    )
+    client = _configured_client(client_module, session)
+
+    result = await client.perform_request("device-id", "get_schedule")
+
+    assert result == {"schedule": "value"}
+    assert session.get.await_count == 3
+    first_request, login_request, retry_request = session.get.await_args_list
+    assert first_request.kwargs["headers"]["Authorization"] == "Basic stale-token"
+    assert "Authorization" not in login_request.kwargs["headers"]
+    assert retry_request.kwargs["headers"]["Authorization"] == "Basic fresh-token"
+
+
+@pytest.mark.asyncio
+async def test_perform_request_retries_only_once(client_module):
+    """Repeated API rejection must not cause an infinite login loop."""
+    session = MagicMock()
+    session.get = AsyncMock(
+        side_effect=[
+            _response({"success": False, "msg": "token expired"}),
+            _response({"success": True, "data": {"token": "fresh-token"}}),
+            _response({"success": False, "msg": "still rejected"}),
+        ]
+    )
+    client = _configured_client(client_module, session)
+
+    assert await client.perform_request("device-id", "get_schedule") is False
+    assert session.get.await_count == 3
+    assert client._token is None
+
+
+@pytest.mark.asyncio
+async def test_get_schedule_info_merges_configured_channels(client_module):
+    """One request type can expose multiple named schedule state fields."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule", "save_schedule"],
+        features={"heat_type": "legacy"},
+        schedule_channels={
+            "heating": {
+                "get_type": "0",
+                "save_type": "1",
+                "response_key": "heatingReservationMode",
+                "state_key": "heatingReservationMode",
+            },
+            "hot_water": {
+                "get_type": "0",
+                "save_type": "2",
+                "response_key": "hotWaterReservationMode",
+                "state_key": "hotWaterReservationMode",
+            },
+        },
+    )
+    client.perform_request = AsyncMock(
+        return_value={
+            "heatingReservationMode": "HEATING",
+            "hotWaterReservationMode": "HOT_WATER",
+        }
+    )
+
+    assert await client.get_schedule_info("device-id") == {
+        "heatingReservationMode": "HEATING",
+        "hotWaterReservationMode": "HOT_WATER",
+    }
+    client.perform_request.assert_awaited_once_with(
+        "device-id", "get_schedule", heat_type="0"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_schedule_info_queries_distinct_channel_types(client_module):
+    """Q85-style schedule channels require one query per app type."""
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["get_schedule"],
+        features={"heat_type": "Q85_HEAT_OVEN"},
+        schedule_channels={
+            "heating": {
+                "get_type": "Q85_HEAT_OVEN",
+                "response_key": "byteStr",
+                "state_key": "heatingReservationMode",
+            },
+            "hot_water": {
+                "get_type": "Q85_HOT_WATER",
+                "response_key": "byteStr",
+                "state_key": "hotWaterReservationMode",
+            },
+        },
+    )
+    client.perform_request = AsyncMock(
+        side_effect=[{"byteStr": "HEATING"}, {"byteStr": "HOT_WATER"}]
+    )
+
+    assert await client.get_schedule_info("device-id") == {
+        "heatingReservationMode": "HEATING",
+        "hotWaterReservationMode": "HOT_WATER",
+    }
+    assert client.perform_request.await_args_list == [
+        call("device-id", "get_schedule", heat_type="Q85_HEAT_OVEN"),
+        call("device-id", "get_schedule", heat_type="Q85_HOT_WATER"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_save_schedule_uses_channel_specific_type(client_module):
+    client_module.async_get_clientsession = MagicMock(return_value=MagicMock())
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device-id"] = {"mac": "device-mac"}
+    client._device_configs["device-id"] = SimpleNamespace(
+        supported_requests=["save_schedule"],
+        features={"heat_type": "legacy"},
+        schedule_channels={"hot_water": {"save_type": "2"}},
+    )
+    client.perform_request = AsyncMock(return_value=True)
+
+    assert await client.save_schedule_hour(
+        "device-id", "AABB", schedule_channel="hot_water"
+    )
+    client.perform_request.assert_awaited_once_with(
+        "device-id", "save_schedule", data="AABB", heat_type="2", success_only=True
+    )

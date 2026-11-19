@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .core.client import RinnaiClient
+from .core.command import RinnaiCommand
 from .const import DOMAIN
 from .models.device import RinnaiDevice, RinnaiDeviceState
 from .core.entity_utils import get_state_value
@@ -125,7 +126,7 @@ class RinnaiCoordinator(DataUpdateCoordinator):
 
                 self._process_device_states()
 
-            # Fetch consumption data for all applicable devices (throttled to once per hour)
+            # Fetch consumption data for all applicable devices (throttled to once per 6 hours)
             current_time = time.time()
             for device_id in self._devices:
                 last = self._last_consumption_fetch.get(device_id, 0)
@@ -174,10 +175,13 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             if device_id in self._devices:
                 _LOGGER.debug("Received state data from client: %s: %s", device_id, state_data)
                 self._devices[device_id].update_state(state_data, is_command=False)
-                self.hass.create_task(self._save_energy_data())
             else:
                 _LOGGER.warning("Received state for unknown device %s, fetching device info", device_id)
                 self._process_devices_data()
+
+        # One save per refresh cycle (not per device); MQTT energy pushes
+        # trigger their own targeted save in _handle_device_update.
+        self.hass.create_task(self._save_energy_data())
 
     def process_device_states(self) -> None:
         """Process device states from client (public method)."""
@@ -214,18 +218,30 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             if any(k in data for k in energy_keys):
                 self.hass.create_task(self._save_energy_data())
 
-    async def async_send_command(self, device_id: str, command: dict[str, Any]) -> bool:
+    async def async_send_command(
+        self,
+        device_id: str,
+        command: RinnaiCommand | dict[str, Any],
+    ) -> bool:
         """Send command to a device."""
-        result = await self.client.send_command(device_id, command)
+        command_request = RinnaiCommand.coerce(command)
+        result = await self.client.send_command(device_id, command_request.payload)
 
         if result and device_id in self._devices:
-            self._devices[device_id].update_state(command, is_command=True)
-            self.async_set_updated_data(self.data)
-            self.data["device_states"][device_id] = self._devices[device_id].state
+            if command_request.optimistic_state:
+                self._devices[device_id].update_state(
+                    command_request.optimistic_state, is_command=True
+                )
+                self.async_set_updated_data(self.data)
+                self.data["device_states"][device_id] = self._devices[device_id].state
 
-            _LOGGER.debug("Command sent successfully to %s: %s", device_id, command)
+            _LOGGER.debug(
+                "Command sent successfully to %s: %s",
+                device_id,
+                command_request.payload,
+            )
         else:
-            _LOGGER.warning("Command Send Failed: %s", command)
+            _LOGGER.warning("Command Send Failed: %s", command_request.payload)
 
         return result
 
@@ -240,13 +256,17 @@ class RinnaiCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(self.data)
         return True
 
-    async def async_refresh_schedule(self, device_id: str) -> None:
+    async def async_refresh_schedule(
+        self, device_id: str, schedule_channel: str | None = None
+    ) -> None:
         """Refresh schedule info for a device."""
         device = self._devices.get(device_id)
         if not device or not device.config or "get_schedule" not in device.config.supported_requests:
             return
         _LOGGER.debug("Refreshing schedule info for device: %s", device_id)
-        schedule_data = await self.client.get_schedule_info(device_id)
+        schedule_data = await self.client.get_schedule_info(
+            device_id, schedule_channel=schedule_channel
+        )
         if schedule_data:
             if device_id in self._devices:
                 self._devices[device_id].update_from_api_data(schedule_data)
@@ -314,10 +334,19 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             )
 
     async def _inject_daily_statistics(self, device_id: str, values: list) -> None:
-        """Inject daily gas consumption history into HA long-term statistics."""
+        """Inject daily gas consumption history into HA long-term statistics.
+
+        The cumulative sum is anchored to the last recorded statistic so the
+        sliding API window never rewrites history with a lower baseline (which
+        would show up as negative usage in the energy dashboard). Only days
+        after the last recorded one are appended; the last recorded day itself
+        is refreshed in place (today's value grows during the day).
+        """
         try:
+            from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder.statistics import (
                 async_add_external_statistics,
+                get_last_statistics,
                 StatisticData,
                 StatisticMetaData,
             )
@@ -345,13 +374,44 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             **extra_meta,
         )
 
+        # Anchor to the last recorded row so sums stay monotonic.
+        try:
+            last_stats = await get_instance(self.hass).async_add_executor_job(
+                get_last_statistics,
+                self.hass,
+                1,
+                statistic_id,
+                True,
+                {"state", "sum"},
+            )
+        except Exception as err:  # noqa: BLE001 - never corrupt stats on failure
+            _LOGGER.warning(
+                "Could not read last statistics for %s, skipping injection: %s",
+                statistic_id,
+                err,
+            )
+            return
+
+        last_start_ts: float | None = None
+        base_sum = 0.0
+        last_state = 0.0
+        if rows := last_stats.get(statistic_id):
+            last = rows[0]
+            raw_start = last.get("start")
+            if isinstance(raw_start, datetime.datetime):
+                last_start_ts = raw_start.timestamp()
+            elif raw_start is not None:
+                last_start_ts = float(raw_start)
+            base_sum = float(last.get("sum") or 0.0)
+            last_state = float(last.get("state") or 0.0)
+
         # values[0] = oldest day (up to 30 days ago), values[-1] = today
         n = len(values)
         today = dt_util.now().date()
         tz = dt_util.get_default_time_zone()
 
         stats: list[StatisticData] = []
-        cumulative = 0.0
+        running_sum: float | None = None
         for i, val in enumerate(values):
             try:
                 delta = float(val)
@@ -361,15 +421,32 @@ class RinnaiCoordinator(DataUpdateCoordinator):
             days_ago = n - 1 - i
             day = today - datetime.timedelta(days=days_ago)
             start = datetime.datetime.combine(day, datetime.time.min).replace(tzinfo=tz)
+            start_ts = start.timestamp()
 
-            cumulative += delta
+            if last_start_ts is not None:
+                if start_ts < last_start_ts - 1:
+                    # Already recorded — never rewrite history.
+                    continue
+                if abs(start_ts - last_start_ts) <= 1:
+                    # Refresh the last recorded day with its updated value.
+                    running_sum = base_sum - last_state
+                elif running_sum is None:
+                    # First day after the recorded ones.
+                    running_sum = base_sum
+            elif running_sum is None:
+                running_sum = 0.0
+
+            running_sum += delta
             stats.append(
                 StatisticData(
                     start=start,
                     state=delta,
-                    sum=cumulative,
+                    sum=running_sum,
                 )
             )
+
+        if not stats:
+            return
 
         async_add_external_statistics(self.hass, metadata, stats)
         _LOGGER.debug(

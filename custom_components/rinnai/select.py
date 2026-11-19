@@ -12,6 +12,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
 from .core.entity_utils import mask_hex_state
+
+from .core.command import build_conditional_payload
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
         """Initialize the select entity."""
         super().__init__(coordinator, device_id, config)
         self._attr_options = config["options"]
+        self._mode_indices = config.get("option_mode_indices", list(range(1, len(self.options) + 1)))
         self._command_type = config["command_type"]
         self._state_attribute = config.get("state_attribute")
         self._update_attributes()
@@ -68,22 +71,23 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
         raw_hex = self.get_state_value(self._state_attribute)
         mode_index = self.schedule_manager.parse_mode_index(raw_hex)
         
-        if mode_index is not None and 1 <= mode_index <= len(self.options):
-            self._attr_current_option = self.options[mode_index - 1]
+        if mode_index in self._mode_indices:
+            self._attr_current_option = self.options[self._mode_indices.index(mode_index)]
         else:
             self._attr_current_option = None
 
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         if self._command_type == "schedule_mode":
-            await self._set_schedule_mode(option)
+            async with self._device.schedule_lock:
+                await self._set_schedule_mode(option)
 
     async def _set_schedule_mode(self, option: str) -> None:
         if not self.schedule_manager or not self._state_attribute:
             return
 
         try:
-            mode_index = self.options.index(option) + 1
+            mode_index = self._mode_indices[self.options.index(option)]
         except ValueError:
             return
 
@@ -94,15 +98,24 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
         if not new_hex:
             return
             
-        # Ensure switch is ON when selecting mode
-        new_hex = self.schedule_manager.update_status(new_hex, True)
+        # C66L edits the mode independently of the reservation switch.
+        if not self.schedule_manager.preserve_status_on_select:
+            new_hex = self.schedule_manager.update_status(new_hex, True)
 
         # Apply preset if configured for this mode
         
         preset_hex = None
         device = self._device
         if device and device.config:
-            presets = device.config.features.get("reservation_mode_presets", {})
+            if self.schedule_channel:
+                channel = device.config.schedule_channels.get(
+                    self.schedule_channel, {}
+                )
+                presets = channel.get("reservation_mode_presets", {})
+            else:
+                presets = device.config.features.get(
+                    "reservation_mode_presets", {}
+                )
             preset_hex = presets.get(str(mode_index))
             
         if preset_hex:
@@ -116,8 +129,14 @@ class RinnaiGenericSelect(RinnaiEntity, SelectEntity):
                 if updated_hex:
                     new_hex = updated_hex
 
-        if await self.coordinator.client.save_schedule_hour(self._device_id, new_hex):
-            await self.coordinator.async_refresh_schedule(self._device_id)
+        if await self.coordinator.client.save_schedule_hour(
+            self._device_id,
+            new_hex,
+            schedule_channel=self.schedule_channel,
+        ):
+            await self.coordinator.async_refresh_schedule(
+                self._device_id, schedule_channel=self.schedule_channel
+            )
             self._attr_current_option = option
             self.async_write_ha_state()
 
@@ -137,6 +156,9 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
         self._command_key: str = config["command_key"]
         self._options_map: dict[str, str] = config["options_map"]
         self._option_commands: dict[str, dict[str, Any]] = config.get("option_commands", {})
+        self._option_command_rules: dict[str, list[dict[str, Any]]] = config.get(
+            "option_command_rules", {}
+        )
         self._value_to_label = self._build_value_to_label_map(config)
         self._state_attribute: str | None = config.get("state_attribute")
         mask = config.get("state_mask")
@@ -182,9 +204,15 @@ class RinnaiCommandSelect(RinnaiEntity, SelectEntity):
     def _command_for_option(self, option: str) -> dict[str, Any] | None:
         """Return the configured command for an option."""
         if option in self._option_commands:
-            return dict(self._option_commands[option])
+            payload = dict(self._option_commands[option])
+        else:
+            value = self._options_map.get(option)
+            if value is None:
+                return None
+            payload = {self._command_key: value}
 
-        value = self._options_map.get(option)
-        if value is None:
-            return None
-        return {self._command_key: value}
+        return build_conditional_payload(
+            payload,
+            self._option_command_rules.get(option, []),
+            self.get_state_value,
+        )

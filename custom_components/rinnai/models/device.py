@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import logging
 from typing import Any
@@ -61,6 +62,8 @@ class RinnaiDevice:
     
     # Device Configuration
     config: RinnaiDeviceConfig | None = None
+
+    schedule_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def update_from_api_data(self, api_data: dict[str, Any]) -> None:
         """Update device from API data."""

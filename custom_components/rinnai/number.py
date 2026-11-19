@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import encode_combined_temperature, encode_temperature
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,7 +60,12 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
         super().__init__(coordinator, device_id, config)
         self._command_key: str = config["command_key"]
         self._state_attribute: str = config["state_attribute"]
+        self._heating_limits = config.get("c66l_heating_limits")
         self._temp_format: str = config.get("temp_format", "hex2")
+        self._combined_temperature_position = config.get(
+            "combined_temperature_position"
+        )
+        self._companion_state_attribute = config.get("companion_state_attribute")
 
         self._attr_native_min_value = float(config["min"])
         self._attr_native_max_value = float(config["max"])
@@ -71,6 +77,15 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
         self._attr_mode = NumberMode.BOX
         self._update_attributes()
 
+    def _heating_limit(self) -> int | None:
+        circuit = str(self.get_state_value("heatingOutWaterTempControl")).upper()
+        eco = str(self.get_state_value("ecoMode")).upper()
+        return self._heating_limits.get(circuit, {}).get(eco)
+
+    @property
+    def available(self) -> bool:
+        return super().available and (not self._heating_limits or self._heating_limit() is not None)
+
     @callback
     def _handle_coordinator_update(self) -> None:
         self._update_attributes()
@@ -79,9 +94,10 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
     def _update_attributes(self) -> None:
         device = self._device
         if not device:
-            self._attr_available = False
+            # Availability is handled by RinnaiEntity.available
             return
-        self._attr_available = device.online
+        if self._heating_limits:
+            self._attr_native_max_value = self._heating_limit() or self._entity_config["max"]
         try:
             val = self.get_state_value(self._state_attribute)
             self._attr_native_value = float(val) if val is not None else None
@@ -90,10 +106,27 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Send the new setpoint to the device."""
-        int_value = int(value)
-        hex_val = hex(int_value)[2:].upper().zfill(2)
-        if self._temp_format == "hex4":
-            hex_val = hex_val + "00"
+        if self._heating_limits:
+            limit = self._heating_limit()
+            if limit is None or not self._attr_native_min_value <= value <= limit:
+                raise ValueError("Temperature is outside the current C66L heating range")
+            if value > 60 and value % 5:
+                raise ValueError("C66L heating setpoints above 60°C use 5°C increments")
+        try:
+            if self._combined_temperature_position:
+                if not self._companion_state_attribute:
+                    raise ValueError("companion_state_attribute is required")
+                companion = self.get_state_value(self._companion_state_attribute)
+                hex_val = encode_combined_temperature(
+                    value,
+                    companion,
+                    self._combined_temperature_position,
+                )
+            else:
+                hex_val = encode_temperature(value, self._temp_format)
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning("Cannot encode setpoint %s: %s", value, err)
+            return
 
         if await self.coordinator.async_send_command(
             self._device_id, {self._command_key: hex_val}
