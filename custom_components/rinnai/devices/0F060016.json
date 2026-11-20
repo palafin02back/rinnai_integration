@@ -2,6 +2,7 @@
   "name": "Rinnai Boiler G58",
   "features": {
     "heat_type": "0",
+    "mqtt_command_format": "device_view_model",
     "gas_consumption_digits": 8,
     "energy_data_keys": [
       "gasUsed",
@@ -116,7 +117,8 @@
         "name": "热水器",
         "key": "main",
         "min_temp": 35,
-        "max_temp": 65,
+        "max_temp": 60,
+        "temperature_bounds_attribute": "hotWaterTempBound",
         "step": 1,
         "command_topic": "tempSetting",
         "temp_format": "hex4",
@@ -134,8 +136,9 @@
         "state_attribute": "heating_temp",
         "companion_state_attribute": "hot_water_temp",
         "combined_temperature_position": "heating",
-        "min": 40,
-        "max": 80,
+        "min": 35,
+        "max": 85,
+        "temperature_bounds_attribute": "heatingTempBound",
         "step": 1,
         "unit_of_measurement": "°C",
         "temp_format": "hex4"

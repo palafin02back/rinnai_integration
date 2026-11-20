@@ -224,3 +224,11 @@ def test_device_json_payload_flows_through_model_pipeline(
             f"{device_type}: state_mapping[{state_attr!r}] references "
             f"{raw_key!r}, but the model pipeline did not expose it"
         )
+
+
+def test_g58_issue4_temperature_report(model_modules):
+    device = model_modules.RinnaiDevice("g58")
+    device.update_from_api_data({"deviceType": "0F060016"})
+    device.update_state({"hotWaterTempSetting": "3700", "heatTempSetting": "3C00"})
+    assert device.state.raw_data["hotWaterTempSetting"] == 55
+    assert device.state.raw_data["heatTempSetting"] == 60

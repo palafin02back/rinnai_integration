@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -9,6 +10,7 @@ from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
+from .core.command import RinnaiCommand, encode_combined_temperature
 from .core.entity_utils import get_state_value
 from .core.schedule_manager import RinnaiScheduleManager
 
@@ -89,6 +91,32 @@ class RinnaiEntity(CoordinatorEntity, Entity):
     def schedule_channel(self) -> str | None:
         """Return the schedule channel selected by this entity."""
         return self._entity_config.get("schedule_channel")
+
+    def packed_temperature_bounds(self, lower: float, upper: float) -> tuple[float, float]:
+        """Decode the G58 upper/lower pair, each a two-byte temperature."""
+        value = self.get_state_value(self._entity_config["temperature_bounds_attribute"])
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{8}", value):
+            reported_low, reported_high = int(value[4:6], 16), int(value[:2], 16)
+            if 0 < reported_low <= reported_high:
+                return reported_low, reported_high
+        return lower, upper
+
+    async def async_send_combined_temperature(self, value: float, command_key: str) -> bool:
+        """Serialize paired setpoints and preserve both bytes of the other circuit."""
+        device = self._device
+        mapping = device.config.state_mapping
+        peer = mapping[self._entity_config["companion_state_attribute"]]
+        target = mapping[self._entity_config["state_attribute"]]
+        position = self._entity_config["combined_temperature_position"]
+        async with device.temperature_lock:
+            raw = device.state_manager.get_display_state().get(peer, device.raw_data.get(peer))
+            if not isinstance(raw, str):
+                raise ValueError("Missing raw companion temperature report")
+            payload = encode_combined_temperature(value, raw, position)
+            target_word = payload[:4] if position == "hot_water" else payload[4:]
+            return await self.coordinator.async_send_command(
+                self._device_id, RinnaiCommand.stateful({command_key: payload}, {target: target_word})
+            )
 
     def get_state_value(self, key: str) -> Any:
         """Get a value from the device state using the configured mapping."""

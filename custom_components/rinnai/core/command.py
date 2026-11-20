@@ -41,12 +41,17 @@ def encode_temperature(value: int | float, temp_format: str = "hex2") -> str:
 
 def encode_combined_temperature(
     value: int | float,
-    companion: int | float,
+    companion: int | float | str,
     position: str,
 ) -> str:
     """Encode G58's hot-water and heating temperatures as one ENL value."""
     encoded_value = encode_temperature(value, "hex4")
-    encoded_companion = encode_temperature(companion, "hex4")
+    if isinstance(companion, str) and re.fullmatch(r"[0-9a-fA-F]{4}", companion):
+        encoded_companion = companion.upper()
+    elif isinstance(companion, (int, float)):
+        encoded_companion = encode_temperature(companion, "hex4")
+    else:
+        raise ValueError("Missing or malformed companion temperature report")
     if position == "hot_water":
         return encoded_value + encoded_companion
     if position == "heating":
@@ -109,17 +114,20 @@ def build_mqtt_command_message(
     device_data: Mapping[str, Any],
     payload: Mapping[str, Any],
     protocol: Mapping[str, str],
+    *,
+    command_format: str | None = None,
 ) -> dict[str, Any]:
     """Build the MQTT command body shared by every device family."""
+    device_view_model = command_format == "device_view_model"
     return {
-        "code": device_data.get("authCode", protocol["info_code"]),
+        "code": "" if device_view_model else device_data.get("authCode", protocol["info_code"]),
         "enl": [
             {"data": encode_mqtt_value(value), "id": key}
             for key, value in payload.items()
         ],
         "id": device_data.get("classID"),
         "ptn": protocol["command_pattern"],
-        "sum": protocol["command_sum"],
+        "sum": str(len(payload)) if device_view_model else protocol["command_sum"],
     }
 
 
