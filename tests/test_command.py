@@ -142,12 +142,14 @@ def test_temperature_encoding_matches_device_families(
     ("value", "companion", "position", "expected"),
     [
         (45, 55, "hot_water", "2D003700"),
+        (45, "370b", "hot_water", "2D00370B"),
         (60, 42, "heating", "2A003C00"),
+        (60, "2a09", "heating", "2A093C00"),
     ],
 )
 def test_g58_combined_temperature_encoding(
     value: float,
-    companion: float,
+    companion: int | str,
     position: str,
     expected: str,
 ) -> None:

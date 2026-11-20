@@ -594,13 +594,18 @@ async def test_g58_water_heater_preserves_heating_temperature_in_combined_comman
             "heating_temp": "heatTempSetting",
         },
     )
+    coordinator.device.temperature_lock = asyncio.Lock()
+    coordinator.device.raw_data = {}
+    coordinator.device.state_manager = SimpleNamespace(get_display_state=lambda: {
+        "hotWaterTempSetting": "2A07", "heatTempSetting": "3705"
+    })
     entity = entity_modules.water_heater.RinnaiWaterHeaterEntity(
         coordinator, "dev1", config
     )
 
     await entity.async_set_temperature(temperature=45)
 
-    assert coordinator.commands == [{"tempSetting": "2D003700"}]
+    assert coordinator.commands == [{"tempSetting": "2D003705"}]
 
 
 @pytest.mark.asyncio
@@ -626,11 +631,16 @@ async def test_g58_heating_number_preserves_hot_water_temperature_in_combined_co
             "heating_temp": "heatTempSetting",
         },
     )
+    coordinator.device.temperature_lock = asyncio.Lock()
+    coordinator.device.raw_data = {}
+    coordinator.device.state_manager = SimpleNamespace(get_display_state=lambda: {
+        "hotWaterTempSetting": "2A07", "heatTempSetting": "3705"
+    })
     entity = entity_modules.number.RinnaiNumberEntity(coordinator, "dev1", config)
 
     await entity.async_set_native_value(60)
 
-    assert coordinator.commands == [{"tempSetting": "2A003C00"}]
+    assert coordinator.commands == [{"tempSetting": "2A073C00"}]
 
 
 @pytest.mark.asyncio
@@ -1445,3 +1455,45 @@ async def test_c66l_hot_water_setpoints(c66l, entity_modules, flame, current, ta
         with pytest.raises(ValueError):
             await entity.async_set_temperature(temperature=target)
         assert c66l.commands == []
+
+
+@pytest.mark.asyncio
+async def test_g58_combined_writes_preserve_latest_setpoint_and_device_bounds(entity_modules):
+    from custom_components.rinnai.core.state_manager import RinnaiStateManager
+
+    device_config = json.loads((RINNAI_ROOT / "devices/0F060016.json").read_text())
+    report = {
+        "heatTempSetting": "3705", "hotWaterTempSetting": "2A03",
+        "heatingTempBound": "46002300", "hotWaterTempBound": "37002500",
+    }
+    coordinator = StubCoordinator(dict(report, heatTempSetting=55, hotWaterTempSetting=42),
+                                  device_config["state_mapping"])
+    device = coordinator.device
+    device.raw_data = {}
+    device.temperature_lock = asyncio.Lock()
+    device.state_manager = RinnaiStateManager()
+    device.state_manager.update_remote(report)
+    async def publish(device_id, command):
+        await asyncio.sleep(0)
+        coordinator.commands.append(command.payload)
+        device.state_manager.set_desired(command.optimistic_state)
+        return True
+    coordinator.async_send_command = publish
+    entities = device_config["entities"]
+    water = entity_modules.water_heater.RinnaiWaterHeaterEntity(coordinator, "dev1", entities["water_heater"][0])
+    heat = entity_modules.number.RinnaiNumberEntity(coordinator, "dev1", entities["number"][0])
+    assert (water.min_temp, water.max_temp) == (37, 55)
+    assert (heat._attr_native_min_value, heat._attr_native_max_value) == (35, 70)
+    await asyncio.gather(water.async_set_temperature(temperature=45), heat.async_set_native_value(60))
+    assert coordinator.commands == [{"tempSetting": "2D003705"}, {"tempSetting": "2D003C00"}]
+    await water.async_set_temperature(temperature=56)
+    with pytest.raises(ValueError):
+        await heat.async_set_native_value(71)
+    coordinator.state.raw_data.update(heatingTempBound="00000000", hotWaterTempBound="bad")
+    heat._update_attributes()
+    water._update_attributes()
+    assert (water.min_temp, water.max_temp) == (35, 60)
+    assert (heat._attr_native_min_value, heat._attr_native_max_value) == (35, 85)
+    device.state_manager = RinnaiStateManager()
+    await water.async_set_temperature(temperature=45)
+    assert len(coordinator.commands) == 2

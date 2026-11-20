@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
-from .core.command import encode_combined_temperature, encode_temperature
+from .core.command import encode_temperature
 from .entity import RinnaiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,7 +65,6 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
         self._combined_temperature_position = config.get(
             "combined_temperature_position"
         )
-        self._companion_state_attribute = config.get("companion_state_attribute")
 
         self._attr_native_min_value = float(config["min"])
         self._attr_native_max_value = float(config["max"])
@@ -96,6 +95,10 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
         if not device:
             # Availability is handled by RinnaiEntity.available
             return
+        if self._entity_config.get("temperature_bounds_attribute"):
+            self._attr_native_min_value, self._attr_native_max_value = self.packed_temperature_bounds(
+                self._entity_config["min"], self._entity_config["max"]
+            )
         if self._heating_limits:
             self._attr_native_max_value = self._heating_limit() or self._entity_config["max"]
         try:
@@ -106,6 +109,8 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Send the new setpoint to the device."""
+        if self._combined_temperature_position and not self._attr_native_min_value <= value <= self._attr_native_max_value:
+            raise ValueError("Temperature is outside the reported heating range")
         if self._heating_limits:
             limit = self._heating_limit()
             if limit is None or not self._attr_native_min_value <= value <= limit:
@@ -114,22 +119,14 @@ class RinnaiNumberEntity(RinnaiEntity, NumberEntity):
                 raise ValueError("C66L heating setpoints above 60°C use 5°C increments")
         try:
             if self._combined_temperature_position:
-                if not self._companion_state_attribute:
-                    raise ValueError("companion_state_attribute is required")
-                companion = self.get_state_value(self._companion_state_attribute)
-                hex_val = encode_combined_temperature(
-                    value,
-                    companion,
-                    self._combined_temperature_position,
-                )
+                success = await self.async_send_combined_temperature(value, self._command_key)
             else:
-                hex_val = encode_temperature(value, self._temp_format)
+                encoded = encode_temperature(value, self._temp_format)
+                success = await self.coordinator.async_send_command(self._device_id, {self._command_key: encoded})
         except (TypeError, ValueError) as err:
             _LOGGER.warning("Cannot encode setpoint %s: %s", value, err)
             return
 
-        if await self.coordinator.async_send_command(
-            self._device_id, {self._command_key: hex_val}
-        ):
+        if success:
             self._attr_native_value = value
             self.async_write_ha_state()

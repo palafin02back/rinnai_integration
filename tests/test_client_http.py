@@ -293,3 +293,26 @@ async def test_save_schedule_uses_channel_specific_type(client_module):
     client.perform_request.assert_awaited_once_with(
         "device-id", "save_schedule", data="AABB", heat_type="2", success_only=True
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("model", "command", "expected_code", "expected_sum"), [
+    ("0F060016", {"tempSetting": "2D003705"}, "", "1"),
+    ("0F060016", {"operationMode": "00", "rapidHeatingSetting": "00", "heatingReservationSetting": "31"}, "", "3"),
+    ("0F06000C", {"summerWinter": "31"}, "1234", "1"),
+])
+async def test_boiler_mqtt_set_envelope(client_module, model, command, expected_code, expected_sum):
+    import json
+
+    profile = Path(__file__).parents[1] / "custom_components" / "rinnai" / "devices" / f"{model}.json"
+    client = client_module.RinnaiClient(MagicMock(), "user", "password")
+    client.devices["device"] = {"mac": "test-mac", "classID": model, "authCode": "1234"}
+    client._device_configs["device"] = SimpleNamespace(features=json.loads(profile.read_text())["features"])
+    client._mqtt_client = SimpleNamespace(connected=True, async_publish=AsyncMock(return_value=True))
+    assert await client.send_command("device", command)
+    topic, payload = client._mqtt_client.async_publish.await_args.args
+    assert topic == "rinnai/SR/01/SR/test-mac/set/"
+    assert json.loads(payload) == {
+        "ptn": "J00", "id": model, "code": expected_code, "sum": expected_sum,
+        "enl": [{"id": name, "data": value} for name, value in command.items()],
+    }

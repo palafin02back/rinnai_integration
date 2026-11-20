@@ -63,6 +63,7 @@ class RinnaiDevice:
     # Device Configuration
     config: RinnaiDeviceConfig | None = None
 
+    temperature_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     schedule_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def update_from_api_data(self, api_data: dict[str, Any]) -> None:

@@ -1097,7 +1097,7 @@ class TestWaterHeaterTempRanges:
 
     EXPECTED_RANGES = {
         "0F06000C": (35, 65),  # G56 boiler DHW
-        "0F060016": (35, 65),
+        "0F060016": (35, 60),  # G58 fallback without hotWaterTempBound
         "0F060G55": (35, 65),
         "02720E86": (32, 60),  # E86/E88 legacy App limits
         "0272000E": (32, 60),  # E88 shadow protocol

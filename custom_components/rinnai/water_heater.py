@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import RinnaiCoordinator
-from .core.command import encode_combined_temperature, encode_temperature
+from .core.command import encode_temperature
 from .entity import RinnaiEntity
 from .relative_temperature import (
     async_set_relative_temperature,
@@ -81,7 +81,6 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
         self._combined_temperature_position = config.get(
             "combined_temperature_position"
         )
-        self._companion_state_attribute = config.get("companion_state_attribute")
         
         # Operation mode name from config, default to "Hot Water" if not specified (display only)
         self._operation_mode = config.get("operation_mode", "Hot Water")
@@ -124,6 +123,11 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
 
     def _update_temperature_range(self) -> None:
         """Update min/max temperature from optional state attributes."""
+        if self._entity_config.get("temperature_bounds_attribute"):
+            self._attr_min_temp, self._attr_max_temp = self.packed_temperature_bounds(
+                self._configured_min_temp, self._configured_max_temp
+            )
+            return
         min_temp = self._temperature_bound(
             self._min_temp_attribute,
             self._configured_min_temp,
@@ -197,16 +201,10 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
 
         try:
             if self._combined_temperature_position:
-                if not self._companion_state_attribute:
-                    raise ValueError("companion_state_attribute is required")
-                companion = self.get_state_value(self._companion_state_attribute)
-                hex_temperature = encode_combined_temperature(
-                    temperature,
-                    companion,
-                    self._combined_temperature_position,
-                )
+                success = await self.async_send_combined_temperature(temperature, self._command_topic)
             else:
-                hex_temperature = encode_temperature(temperature, self._temp_format)
+                encoded = encode_temperature(temperature, self._temp_format)
+                success = await self.coordinator.async_send_command(self._device_id, {self._command_topic: encoded})
         except (TypeError, ValueError) as err:
             _LOGGER.warning(
                 "Device %s: cannot encode water heater temperature %s: %s",
@@ -215,10 +213,6 @@ class RinnaiWaterHeaterEntity(RinnaiEntity, WaterHeaterEntity):
                 err,
             )
             return
-        command = {self._command_topic: hex_temperature}
-
-        success = await self.coordinator.async_send_command(self._device_id, command)
-
         if success:
             self._attr_target_temperature = float(temperature)
             self.async_write_ha_state()

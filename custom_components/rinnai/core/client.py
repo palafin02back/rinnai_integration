@@ -660,18 +660,16 @@ class RinnaiClient:
         device_data = self.devices[device_id]
         proto = MQTT_DEFINITIONS["protocol"]
         
-        auth_code = device_data.get("authCode", proto["info_code"])
+        config = self._device_configs.get(device_id)
         device_mac = device_data.get("mac")
         if not device_mac:
             return False
 
-        device_classid = device_data.get("classID")
         set_topic = MQTT_DEFINITIONS["topics"]["set"].format(mac=device_mac)
         
         rinnai_message = build_mqtt_command_message(
-            {"authCode": auth_code, "classID": device_classid},
-            command,
-            proto,
+            device_data, command, proto,
+            command_format=config.features.get("mqtt_command_format") if config else None,
         )
 
         try:
